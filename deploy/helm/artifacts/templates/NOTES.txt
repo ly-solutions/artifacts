@@ -1,0 +1,15 @@
+artifacts is starting.
+
+  URL:      {{ include "artifacts.publicUrl" . }}
+  Storage:  {{ .Values.storage.driver }}{{ if eq .Values.storage.driver "s3" }} (bucket {{ .Values.storage.s3.bucket }}{{ with .Values.storage.s3.prefix }}, prefix {{ . }}{{ end }}){{ end }}
+  Auth:     {{ .Values.auth.mode }}
+{{- if not .Values.ingress.enabled }}
+
+No ingress is enabled. To try it locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "artifacts.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+
+Point agents at it:
+  export ARTIFACTS_URL={{ include "artifacts.publicUrl" . }}
+  export ARTIFACTS_TOKEN=<the editor token from secret {{ include "artifacts.secretName" . }}>
+  artifacts find "topic"

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: artifacts
+description: Versioned documents that people and coding agents publish, find and share. S3 or filesystem storage.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/ly-solutions/artifacts
+sources:
+  - https://github.com/ly-solutions/artifacts
+keywords:
+  - documents
+  - agents
+  - s3
+  - catalog
+maintainers:
+  - name: Ly Solutions
+    url: https://github.com/ly-solutions
+annotations:
+  artifacthub.io/license: Apache-2.0

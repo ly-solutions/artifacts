@@ -1,0 +1,158 @@
+{{- include "artifacts.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "artifacts.fullname" . }}
+  labels:
+    {{- include "artifacts.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if eq .Values.storage.driver "fs" }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "artifacts.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "artifacts.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "artifacts.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: artifacts
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - { name: ARTIFACTS_PORT, value: "8080" }
+            - { name: ARTIFACTS_PUBLIC_URL, value: {{ include "artifacts.publicUrl" . | quote }} }
+            - { name: ARTIFACTS_SITE_NAME, value: {{ .Values.config.siteName | quote }} }
+            - { name: ARTIFACTS_LOG_LEVEL, value: {{ .Values.config.logLevel | quote }} }
+            - { name: ARTIFACTS_LOG_FORMAT, value: {{ .Values.config.logFormat | quote }} }
+            - { name: ARTIFACTS_INDEX_REFRESH, value: {{ .Values.config.indexRefresh | quote }} }
+            - { name: ARTIFACTS_MAX_DOCUMENT_BYTES, value: {{ .Values.config.maxDocumentBytes | int | quote }} }
+            - { name: ARTIFACTS_STORAGE, value: {{ .Values.storage.driver | quote }} }
+            {{- if eq .Values.storage.driver "s3" }}
+            - { name: ARTIFACTS_S3_BUCKET, value: {{ .Values.storage.s3.bucket | quote }} }
+            - { name: ARTIFACTS_S3_PREFIX, value: {{ .Values.storage.s3.prefix | quote }} }
+            - { name: ARTIFACTS_S3_ENDPOINT, value: {{ .Values.storage.s3.endpoint | quote }} }
+            - { name: ARTIFACTS_S3_REGION, value: {{ .Values.storage.s3.region | quote }} }
+            - { name: ARTIFACTS_S3_FORCE_PATH_STYLE, value: {{ .Values.storage.s3.forcePathStyle | toString | quote }} }
+            - { name: ARTIFACTS_S3_CREATE_BUCKET, value: {{ .Values.storage.s3.createBucket | toString | quote }} }
+            - { name: ARTIFACTS_S3_CONDITIONAL_WRITES, value: {{ .Values.storage.s3.conditionalWrites | toString | quote }} }
+            {{- else }}
+            - { name: ARTIFACTS_DATA_DIR, value: /data }
+            {{- end }}
+            - { name: ARTIFACTS_AUTH, value: {{ .Values.auth.mode | quote }} }
+            - { name: ARTIFACTS_EDITORS, value: {{ .Values.auth.editors | quote }} }
+            - { name: ARTIFACTS_EDITOR_GROUPS, value: {{ .Values.auth.editorGroups | quote }} }
+            - { name: ARTIFACTS_SESSION_TTL, value: {{ .Values.auth.sessionTtl | quote }} }
+            {{- if eq .Values.auth.mode "oidc" }}
+            - { name: ARTIFACTS_OIDC_ISSUER, value: {{ .Values.auth.oidc.issuer | quote }} }
+            - { name: ARTIFACTS_OIDC_CLIENT_ID, value: {{ .Values.auth.oidc.clientId | quote }} }
+            - { name: ARTIFACTS_OIDC_SCOPES, value: {{ .Values.auth.oidc.scopes | quote }} }
+            - { name: ARTIFACTS_OIDC_REDIRECT_URL, value: {{ .Values.auth.oidc.redirectUrl | quote }} }
+            - { name: ARTIFACTS_OIDC_ALLOWED_DOMAINS, value: {{ .Values.auth.oidc.allowedDomains | quote }} }
+            - { name: ARTIFACTS_OIDC_ALLOWED_GROUPS, value: {{ .Values.auth.oidc.allowedGroups | quote }} }
+            - { name: ARTIFACTS_OIDC_GROUPS_CLAIM, value: {{ .Values.auth.oidc.groupsClaim | quote }} }
+            - { name: ARTIFACTS_OIDC_ACCEPT_BEARER, value: {{ .Values.auth.oidc.acceptBearer | toString | quote }} }
+            {{- end }}
+            {{- if eq .Values.auth.mode "proxy" }}
+            - { name: ARTIFACTS_PROXY_USER_HEADER, value: {{ .Values.auth.proxy.userHeader | quote }} }
+            - { name: ARTIFACTS_PROXY_EMAIL_HEADER, value: {{ .Values.auth.proxy.emailHeader | quote }} }
+            - { name: ARTIFACTS_PROXY_GROUPS_HEADER, value: {{ .Values.auth.proxy.groupsHeader | quote }} }
+            - { name: ARTIFACTS_PROXY_TRUSTED_CIDRS, value: {{ .Values.auth.proxy.trustedCidrs | quote }} }
+            {{- end }}
+            {{- with .Values.links.taskPattern }}
+            - { name: ARTIFACTS_TASK_PATTERN, value: {{ . | quote }} }
+            {{- end }}
+            - { name: ARTIFACTS_TASK_URL, value: {{ .Values.links.taskUrl | quote }} }
+            - { name: ARTIFACTS_SESSION_URL, value: {{ .Values.links.sessionUrl | quote }} }
+            - { name: ARTIFACTS_FRAME_ANCESTORS, value: {{ .Values.embed.frameAncestors | quote }} }
+            - { name: ARTIFACTS_CORS_ORIGINS, value: {{ .Values.embed.corsOrigins | quote }} }
+            - { name: ARTIFACTS_CONTENT_SCRIPT_SRC, value: {{ .Values.content.scriptSrc | quote }} }
+            - { name: ARTIFACTS_CONTENT_CONNECT_SRC, value: {{ .Values.content.connectSrc | quote }} }
+            - { name: ARTIFACTS_SHARE_TTL, value: {{ .Values.share.ttl | quote }} }
+            - { name: ARTIFACTS_WEBHOOK_URL, value: {{ .Values.webhook.url | quote }} }
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "artifacts.secretName" . }}
+                optional: true
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq .Values.storage.driver "fs" }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if eq .Values.storage.driver "fs" }}
+        - name: data
+          {{- if .Values.storage.fs.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.fs.persistence.existingClaim | default (include "artifacts.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

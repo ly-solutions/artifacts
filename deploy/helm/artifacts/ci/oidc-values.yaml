@@ -1,0 +1,18 @@
+storage:
+  s3:
+    bucket: artifacts
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/artifacts
+auth:
+  mode: oidc
+  editors: ""
+  editorGroups: docs-editors
+  oidc:
+    issuer: https://id.example.com/realms/main
+    clientId: artifacts
+    allowedDomains: example.com
+existingSecret: artifacts-secrets
+links:
+  taskPattern: '^[A-Z]+-\d+$'
+  taskUrl: https://tracker.example.com/browse/{task}

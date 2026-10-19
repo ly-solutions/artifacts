@@ -1,0 +1,254 @@
+# Default values for the artifacts chart. Every key is described in README.md next to this file.
+
+# -- Number of pods. Must be 1 with storage.driver=fs.
+replicaCount: 2
+
+image:
+  # -- Image repository.
+  repository: ghcr.io/ly-solutions/artifacts
+  # -- Image tag; defaults to the chart's appVersion.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Secrets for pulling the image from a private registry.
+imagePullSecrets: []
+# -- Override the chart name.
+nameOverride: ""
+# -- Override the full resource name.
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a service account.
+  create: true
+  # -- Annotations, e.g. eks.amazonaws.com/role-arn for IRSA or iam.gke.io/gcp-service-account.
+  annotations: {}
+  # -- Name of the service account; generated when empty.
+  name: ""
+
+config:
+  # -- External URL of the server (links, share URLs, cookies, OIDC redirect). Defaults to the first ingress host.
+  publicUrl: ""
+  # -- Name shown in page titles.
+  siteName: artifacts
+  # -- Log level: debug, info, warn, error.
+  logLevel: info
+  # -- Log format: json or text.
+  logFormat: json
+  # -- How often replicas look for each other's writes.
+  indexRefresh: 10s
+  # -- Largest accepted version, in bytes.
+  maxDocumentBytes: 8388608
+
+storage:
+  # -- Storage driver: s3 or fs.
+  driver: s3
+  s3:
+    # -- Bucket name (required for s3).
+    bucket: ""
+    # -- Key prefix inside the bucket.
+    prefix: ""
+    # -- Endpoint of an S3-compatible store; empty for AWS.
+    endpoint: ""
+    # -- Signing region.
+    region: us-east-1
+    # -- Path-style addressing; empty = automatic (on when an endpoint is set).
+    forcePathStyle: ""
+    # -- Create the bucket at start if missing.
+    createBucket: false
+    # -- Conditional PUT (If-Match / If-None-Match): auto, on or off. Use off only for stores without it, with one replica.
+    conditionalWrites: auto
+  fs:
+    persistence:
+      # -- Keep fs data on a PersistentVolumeClaim (otherwise an emptyDir, lost with the pod).
+      enabled: true
+      # -- Use an existing claim instead of creating one.
+      existingClaim: ""
+      # -- Storage class of the created claim.
+      storageClass: ""
+      # -- Size of the created claim.
+      size: 5Gi
+      # -- Access modes of the created claim.
+      accessModes: [ReadWriteOnce]
+
+auth:
+  # -- token, oidc, proxy or none.
+  mode: token
+  # -- People who get the editor role in oidc/proxy modes ("*" = everyone who signs in).
+  editors: "*"
+  # -- Groups whose members get the editor role.
+  editorGroups: ""
+  # -- Browser session lifetime.
+  sessionTtl: 12h
+  oidc:
+    # -- Issuer URL.
+    issuer: ""
+    # -- Client id.
+    clientId: ""
+    # -- Scopes.
+    scopes: openid profile email
+    # -- Redirect URL; defaults to <publicUrl>/auth/callback.
+    redirectUrl: ""
+    # -- Only emails in these domains (comma-separated).
+    allowedDomains: ""
+    # -- Only members of these groups (comma-separated).
+    allowedGroups: ""
+    # -- Claim with group names.
+    groupsClaim: groups
+    # -- Accept provider-issued JWTs as API bearer tokens.
+    acceptBearer: false
+  proxy:
+    # -- Header with the user name.
+    userHeader: X-Forwarded-User
+    # -- Header with the email.
+    emailHeader: X-Forwarded-Email
+    # -- Header with groups.
+    groupsHeader: X-Forwarded-Groups
+    # -- Addresses the headers are trusted from (your proxy or ingress pods).
+    trustedCidrs: 127.0.0.1/32,::1/128
+
+links:
+  # -- Regular expression for task values.
+  taskPattern: ""
+  # -- Task link template, e.g. https://tracker.example.com/issue/{task}.
+  taskUrl: ""
+  # -- Conversation link template, e.g. https://workspace.example.com/sessions/{session}.
+  sessionUrl: ""
+
+embed:
+  # -- Origins allowed to frame the embed view (comma-separated), e.g. your agent workspace.
+  frameAncestors: ""
+  # -- Origins allowed to call the API from a browser (comma-separated).
+  corsOrigins: ""
+
+content:
+  # -- Script origins published documents may load.
+  scriptSrc: https://cdnjs.cloudflare.com,https://cdn.jsdelivr.net
+  # -- Origins published documents may fetch from (empty = none).
+  connectSrc: ""
+
+share:
+  # -- Default share link lifetime when a request sets none (empty = no expiry).
+  ttl: ""
+
+webhook:
+  # -- URL notified on publish, metadata change, share, unshare and delete.
+  url: ""
+
+# -- Name of an existing Secret with any of: ARTIFACTS_TOKEN, ARTIFACTS_READ_TOKEN, ARTIFACTS_SECRET,
+# ARTIFACTS_S3_ACCESS_KEY_ID, ARTIFACTS_S3_SECRET_ACCESS_KEY, ARTIFACTS_OIDC_CLIENT_SECRET, ARTIFACTS_WEBHOOK_SECRET.
+# When set, the values under `secrets` are ignored.
+existingSecret: ""
+
+# Inline secret values rendered into a Secret by this chart. Prefer existingSecret (External Secrets,
+# Sealed Secrets, SOPS, Vault) in real deployments; these end up in the release history.
+secrets:
+  # -- Editor token(s).
+  token: ""
+  # -- Viewer token(s).
+  readToken: ""
+  # -- Signing key for sessions and share links (generated and kept in storage when empty).
+  signingSecret: ""
+  # -- S3 access key id (leave empty with IRSA / workload identity).
+  s3AccessKeyId: ""
+  # -- S3 secret access key.
+  s3SecretAccessKey: ""
+  # -- OIDC client secret.
+  oidcClientSecret: ""
+  # -- Webhook HMAC secret.
+  webhookSecret: ""
+
+# -- Extra environment variables, e.g. AWS_REGION or proxy settings.
+extraEnv: []
+# -- Extra env sources (ConfigMaps / Secrets).
+extraEnvFrom: []
+
+service:
+  # -- Service type.
+  type: ClusterIP
+  # -- Service port.
+  port: 80
+  # -- Service annotations.
+  annotations: {}
+
+ingress:
+  # -- Expose through an Ingress.
+  enabled: false
+  # -- Ingress class.
+  className: ""
+  # -- Ingress annotations (body size: documents can be several MB).
+  annotations: {}
+    # nginx.ingress.kubernetes.io/proxy-body-size: 16m
+  # -- Hosts and paths.
+  hosts:
+    - host: artifacts.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS settings.
+  tls: []
+    # - secretName: artifacts-tls
+    #   hosts: [artifacts.example.com]
+
+# -- Resource requests and limits.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# -- Pod security context.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 20
+  timeoutSeconds: 5
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 3
+  failureThreshold: 40
+
+podDisruptionBudget:
+  # -- Create a PodDisruptionBudget (only when replicaCount > 1).
+  enabled: true
+  # -- Minimum available pods.
+  minAvailable: 1
+
+# -- Pod annotations.
+podAnnotations: {}
+# -- Pod labels.
+podLabels: {}
+# -- Node selector.
+nodeSelector: {}
+# -- Tolerations.
+tolerations: []
+# -- Affinity.
+affinity: {}
+# -- Topology spread constraints.
+topologySpreadConstraints: []

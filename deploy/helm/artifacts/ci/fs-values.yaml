@@ -1,0 +1,5 @@
+replicaCount: 1
+storage:
+  driver: fs
+secrets:
+  token: ci-only-token-0123456789abcdef

@@ -1,0 +1,43 @@
+# Local stack: artifacts on http://localhost:8080 with MinIO as the S3 store.
+#   docker compose up --build
+# Sign in at http://localhost:8080/login with the token below (or your ARTIFACTS_TOKEN).
+# The MinIO console is on http://localhost:9001 (user and password below).
+# These credentials are for a local demo only; never reuse them anywhere reachable.
+name: artifacts
+
+services:
+  minio:
+    # Community build of MinIO (AGPL-3.0); any S3-compatible store works.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: artifacts
+      MINIO_ROOT_PASSWORD: artifacts-local-only
+    ports:
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  artifacts:
+    build: .
+    image: ghcr.io/ly-solutions/artifacts:local
+    depends_on:
+      - minio
+    environment:
+      ARTIFACTS_PUBLIC_URL: http://localhost:${ARTIFACTS_HOST_PORT:-8080}
+      ARTIFACTS_STORAGE: s3
+      ARTIFACTS_S3_ENDPOINT: http://minio:9000
+      ARTIFACTS_S3_BUCKET: artifacts
+      ARTIFACTS_S3_CREATE_BUCKET: "true"
+      ARTIFACTS_S3_ACCESS_KEY_ID: artifacts
+      ARTIFACTS_S3_SECRET_ACCESS_KEY: artifacts-local-only
+      ARTIFACTS_AUTH: token
+      ARTIFACTS_TOKEN: ${ARTIFACTS_TOKEN:-local-demo-token-change-me}
+      ARTIFACTS_LOG_FORMAT: text
+    ports:
+      - "127.0.0.1:${ARTIFACTS_HOST_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  minio-data:

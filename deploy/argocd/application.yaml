@@ -1,0 +1,54 @@
+# Argo CD Application for artifacts, deployed from the chart in this repository.
+# Replace the bucket, endpoint and host; create the Secret named in existingSecret beforehand
+# (or manage it with External Secrets / Sealed Secrets in the same app).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: artifacts
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ly-solutions/artifacts.git
+    targetRevision: v0.1.0
+    path: deploy/helm/artifacts
+    helm:
+      valuesObject:
+        storage:
+          driver: s3
+          s3:
+            bucket: my-artifacts
+            endpoint: https://s3.example.com
+            region: us-east-1
+        existingSecret: artifacts-secrets
+        auth:
+          mode: oidc
+          oidc:
+            issuer: https://id.example.com
+            clientId: artifacts
+        embed:
+          frameAncestors: https://workspace.example.com
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-body-size: 16m
+          hosts:
+            - host: artifacts.example.com
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: artifacts-tls
+              hosts: [artifacts.example.com]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: artifacts
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
