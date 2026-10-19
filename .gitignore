@@ -1,0 +1,9 @@
+node_modules/
+data/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+/deploy/helm/artifacts/charts/
+/deploy/helm/artifacts/*.tgz

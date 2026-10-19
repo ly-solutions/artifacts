@@ -1,0 +1,51 @@
+{
+  "name": "@ly-solutions/artifacts",
+  "version": "0.1.0",
+  "description": "A catalog for documents that people and coding agents publish: versioned HTML and Markdown pages with search, a reader and revocable share links. S3 or filesystem storage.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "homepage": "https://github.com/ly-solutions/artifacts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ly-solutions/artifacts.git"
+  },
+  "bugs": "https://github.com/ly-solutions/artifacts/issues",
+  "keywords": [
+    "documents",
+    "agents",
+    "claude-code",
+    "s3",
+    "catalog",
+    "markdown",
+    "self-hosted"
+  ],
+  "bin": {
+    "artifacts": "bin/artifacts.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "skills",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/artifacts.mjs serve",
+    "dev": "ARTIFACTS_STORAGE=fs ARTIFACTS_AUTH=none node --watch bin/artifacts.mjs serve",
+    "test": "node --test --test-concurrency=2 \"test/**/*.test.mjs\"",
+    "lint": "oxlint --deny-warnings",
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "marked": "^18.1.1",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "oxlint": "1.86.0"
+  }
+}
