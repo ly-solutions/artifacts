@@ -8,7 +8,7 @@ import { after, before, describe, it } from 'node:test'
 
 import { ConflictError, assertKey, parseStorageUrl } from '../src/storage/index.mjs'
 import { FsStorage } from '../src/storage/fs.mjs'
-import { S3Storage } from '../src/storage/s3.mjs'
+import { S3Storage, bucketNameProblem } from '../src/storage/s3.mjs'
 import { signRequest, uriEncode } from '../src/storage/sigv4.mjs'
 import { startFakeS3 } from './helpers/fake-s3.mjs'
 import { tempDir } from './helpers/tmp.mjs'
@@ -30,13 +30,17 @@ const drivers = [
   },
 ]
 
+// A bad test bucket would fail inside before() and cancel every test of the suite; say it plainly instead.
+const testBucket = process.env.ARTIFACTS_TEST_S3_BUCKET ?? 'artifacts-test'
+if (process.env.ARTIFACTS_TEST_S3_ENDPOINT && bucketNameProblem(testBucket)) throw new Error(`ARTIFACTS_TEST_S3_BUCKET: ${bucketNameProblem(testBucket)}`)
+
 if (process.env.ARTIFACTS_TEST_S3_ENDPOINT) {
   drivers.push({
     name: `s3 (${process.env.ARTIFACTS_TEST_S3_ENDPOINT})`,
     async setup() {
       const storage = new S3Storage({
         endpoint: process.env.ARTIFACTS_TEST_S3_ENDPOINT,
-        bucket: process.env.ARTIFACTS_TEST_S3_BUCKET ?? 'artifacts-test',
+        bucket: testBucket,
         prefix: `run-${randomBytes(4).toString('hex')}/`,
         region: process.env.ARTIFACTS_TEST_S3_REGION ?? 'us-east-1',
         accessKeyId: process.env.ARTIFACTS_TEST_S3_ACCESS_KEY_ID,
@@ -166,11 +170,19 @@ describe('sigv4', () => {
     assert.equal(uriEncode('é'), '%C3%A9')
   })
 
+  it('rejects invalid bucket names before the first request', () => {
+    for (const bad of ['ci', 'a'.repeat(64), 'Upper', '-dash', 'dash-', 'a..b', '192.168.1.1', 'under_score']) {
+      assert.ok(bucketNameProblem(bad), bad)
+      assert.throws(() => new S3Storage({ bucket: bad, accessKeyId: 'k', secretAccessKey: 's' }), /bucket name/)
+    }
+    for (const good of ['abc', 'artifacts-ci', 'my.bucket.example', 'a1b']) assert.equal(bucketNameProblem(good), null, good)
+  })
+
   it('builds virtual-hosted URLs for AWS and path-style for custom endpoints', () => {
-    const aws = new S3Storage({ bucket: 'b', region: 'eu-west-1', accessKeyId: 'k', secretAccessKey: 's' })
-    assert.equal(aws.url('meta/x.json'), 'https://b.s3.eu-west-1.amazonaws.com/meta/x.json')
-    const minio = new S3Storage({ bucket: 'b', endpoint: 'http://minio:9000', prefix: 'p', accessKeyId: 'k', secretAccessKey: 's' })
-    assert.equal(minio.url('meta/x.json'), 'http://minio:9000/b/p/meta/x.json')
+    const aws = new S3Storage({ bucket: 'bkt', region: 'eu-west-1', accessKeyId: 'k', secretAccessKey: 's' })
+    assert.equal(aws.url('meta/x.json'), 'https://bkt.s3.eu-west-1.amazonaws.com/meta/x.json')
+    const minio = new S3Storage({ bucket: 'bkt', endpoint: 'http://minio:9000', prefix: 'p', accessKeyId: 'k', secretAccessKey: 's' })
+    assert.equal(minio.url('meta/x.json'), 'http://minio:9000/bkt/p/meta/x.json')
   })
 
   it('falls back to check-then-write without conditional write support', async () => {

@@ -43,6 +43,12 @@ jobs:
   s3:
     name: test against MinIO
     runs-on: ubuntu-latest
+    env:
+      ARTIFACTS_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+      # S3 bucket names are 3 to 63 characters; the suites refuse anything else up front.
+      ARTIFACTS_TEST_S3_BUCKET: artifacts-ci
+      ARTIFACTS_TEST_S3_ACCESS_KEY_ID: ci-user
+      ARTIFACTS_TEST_S3_SECRET_ACCESS_KEY: ci-password-123
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -53,16 +59,22 @@ jobs:
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 127.0.0.1:9000:9000 \
-            -e MINIO_ROOT_USER=ci-user -e MINIO_ROOT_PASSWORD=ci-password-123 \
+            -e MINIO_ROOT_USER="$ARTIFACTS_TEST_S3_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$ARTIFACTS_TEST_S3_SECRET_ACCESS_KEY" \
             pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
-          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+      - name: Wait until MinIO serves the bucket
+        run: |
+          ready=
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://127.0.0.1:9000/minio/health/ready; then ready=1; break; fi
+            sleep 1
+          done
+          [ -n "$ready" ] || { docker logs minio; exit 1; }
+          node scripts/wait-for-s3.mjs 60
       - name: Storage and service suites on a real S3 endpoint
-        env:
-          ARTIFACTS_TEST_S3_ENDPOINT: http://127.0.0.1:9000
-          ARTIFACTS_TEST_S3_BUCKET: ci
-          ARTIFACTS_TEST_S3_ACCESS_KEY_ID: ci-user
-          ARTIFACTS_TEST_S3_SECRET_ACCESS_KEY: ci-password-123
         run: node --test test/storage.test.mjs test/service.test.mjs
+      - name: MinIO logs
+        if: failure()
+        run: docker logs minio
 
   helm:
     runs-on: ubuntu-latest

@@ -28,9 +28,23 @@ const tag = (xml, name) => {
   return match ? xmlText(match[1]) : undefined
 }
 
+/**
+ * S3 bucket naming rules: 3 to 63 characters, lowercase letters, digits, dots and dashes,
+ * starting and ending with a letter or digit, not shaped like an IP address. A bad name
+ * otherwise surfaces only as 400 InvalidBucketName from the first request.
+ */
+export function bucketNameProblem(name) {
+  if (typeof name !== 'string' || name.length < 3 || name.length > 63) return `bucket name "${name}" must be 3 to 63 characters long`
+  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(name)) return `bucket name "${name}" may contain only lowercase letters, digits, dots and dashes, and must start and end with a letter or digit`
+  if (name.includes('..') || /^\d+\.\d+\.\d+\.\d+$/.test(name)) return `bucket name "${name}" must not contain ".." or look like an IP address`
+  return null
+}
+
 export class S3Storage {
   constructor({ bucket, prefix = '', endpoint, region = 'us-east-1', forcePathStyle, accessKeyId, secretAccessKey, sessionToken, conditionalWrites = true, fetchImpl = fetch }) {
     if (!bucket) throw new Error('s3 storage needs a bucket (ARTIFACTS_S3_BUCKET)')
+    const problem = bucketNameProblem(bucket)
+    if (problem) throw new Error(problem)
     if (!accessKeyId || !secretAccessKey) throw new Error('s3 storage needs credentials (ARTIFACTS_S3_ACCESS_KEY_ID / ARTIFACTS_S3_SECRET_ACCESS_KEY or AWS_*)')
     this.name = 's3'
     this.bucket = bucket

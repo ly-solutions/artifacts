@@ -4,7 +4,7 @@ import { after, before, beforeEach, describe, it } from 'node:test'
 
 import { ArtifactService } from '../src/service.mjs'
 import { FsStorage } from '../src/storage/fs.mjs'
-import { S3Storage } from '../src/storage/s3.mjs'
+import { S3Storage, bucketNameProblem } from '../src/storage/s3.mjs'
 import { startFakeS3 } from './helpers/fake-s3.mjs'
 import { tempDir, testConfig } from './helpers/setup.mjs'
 
@@ -19,11 +19,15 @@ const backends = {
   },
 }
 
+// A bad test bucket would fail inside before() and cancel every test of the suite; say it plainly instead.
+const testBucket = process.env.ARTIFACTS_TEST_S3_BUCKET ?? 'artifacts-test'
+if (process.env.ARTIFACTS_TEST_S3_ENDPOINT && bucketNameProblem(testBucket)) throw new Error(`ARTIFACTS_TEST_S3_BUCKET: ${bucketNameProblem(testBucket)}`)
+
 if (process.env.ARTIFACTS_TEST_S3_ENDPOINT) {
   backends[`s3 (${process.env.ARTIFACTS_TEST_S3_ENDPOINT})`] = async () => {
     const storage = new S3Storage({
       endpoint: process.env.ARTIFACTS_TEST_S3_ENDPOINT,
-      bucket: process.env.ARTIFACTS_TEST_S3_BUCKET ?? 'artifacts-test',
+      bucket: testBucket,
       prefix: `service-${randomBytes(4).toString('hex')}/`,
       region: process.env.ARTIFACTS_TEST_S3_REGION ?? 'us-east-1',
       accessKeyId: process.env.ARTIFACTS_TEST_S3_ACCESS_KEY_ID,

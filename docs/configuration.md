@@ -25,7 +25,7 @@ mode, no bucket for S3, an invalid regular expression) and says which variable t
 |---|---|---|
 | `ARTIFACTS_STORAGE` | `s3` when `ARTIFACTS_S3_BUCKET` is set, else `fs` | `s3` or `fs`. Production installs use `s3`; `fs` is for development and single-replica installs. |
 | `ARTIFACTS_DATA_DIR` | `./data` | Root directory of the `fs` driver. One replica only. |
-| `ARTIFACTS_S3_BUCKET` | — | **Required for s3.** Bucket name. |
+| `ARTIFACTS_S3_BUCKET` | — | **Required for s3.** Bucket name, 3 to 63 lowercase letters, digits, dots and dashes; checked at start. |
 | `ARTIFACTS_S3_PREFIX` | empty | Key prefix inside the bucket, e.g. `artifacts/`, so one bucket can hold several installs. |
 | `ARTIFACTS_S3_ENDPOINT` | empty (AWS) | Endpoint of an S3-compatible store, e.g. `http://minio:9000`, `https://<account>.r2.cloudflarestorage.com`. |
 | `ARTIFACTS_S3_REGION` | `us-east-1` (or `AWS_REGION`) | Signing region. |

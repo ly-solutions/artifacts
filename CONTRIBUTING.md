@@ -25,7 +25,7 @@ Against a real S3 endpoint (CI uses MinIO):
 ```bash
 docker run -d --name minio -p 127.0.0.1:9000:9000 -e MINIO_ROOT_USER=test -e MINIO_ROOT_PASSWORD=test-secret-123 \
   pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
-ARTIFACTS_TEST_S3_ENDPOINT=http://127.0.0.1:9000 ARTIFACTS_TEST_S3_ACCESS_KEY_ID=test \
+ARTIFACTS_TEST_S3_ENDPOINT=http://127.0.0.1:9000 ARTIFACTS_TEST_S3_BUCKET=artifacts-test ARTIFACTS_TEST_S3_ACCESS_KEY_ID=test \
   ARTIFACTS_TEST_S3_SECRET_ACCESS_KEY=test-secret-123 npm test
 ```
 

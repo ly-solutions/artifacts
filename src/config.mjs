@@ -1,3 +1,5 @@
+import { bucketNameProblem } from './storage/s3.mjs'
+
 /**
  * Configuration from environment variables. Every option is documented in
  * docs/configuration.md; keep the two in sync (a test checks the names).
@@ -125,6 +127,7 @@ export function validateConfig(config) {
   if (config.storage === 'fs') warnings.push(`storage: fs in ${config.fsDir} (one replica only; set ARTIFACTS_S3_BUCKET for S3)`)
   if (config.storage === 's3') {
     if (!config.s3.bucket) errors.push('ARTIFACTS_S3_BUCKET is required with ARTIFACTS_STORAGE=s3 (use ARTIFACTS_STORAGE=fs for a local directory)')
+    else if (bucketNameProblem(config.s3.bucket)) errors.push(`ARTIFACTS_S3_BUCKET: ${bucketNameProblem(config.s3.bucket)}`)
     if (!config.s3.accessKeyId || !config.s3.secretAccessKey) errors.push('S3 credentials missing: set ARTIFACTS_S3_ACCESS_KEY_ID and ARTIFACTS_S3_SECRET_ACCESS_KEY (or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)')
   }
   const { auth } = config

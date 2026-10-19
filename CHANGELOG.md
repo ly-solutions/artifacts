@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Invalid S3 bucket names are refused at start with the naming rule, instead of failing on the first request
+  with `400 InvalidBucketName`.
+- CI: the MinIO job used the bucket name `ci`, which S3 rejects, so the test suites' setup failed and every test
+  was reported as cancelled. It now uses `artifacts-ci`, waits for `/minio/health/ready` and for a real bucket
+  round trip (`scripts/wait-for-s3.mjs`), and the suites fail fast with a clear message on a bad test bucket.
+
 ## [0.1.0] - 2026-10-19
 
 First public release.

@@ -13,7 +13,7 @@ describe('configuration', () => {
 
   it('uses s3 when a bucket is set, a directory otherwise', () => {
     assert.equal(loadConfig({}).storage, 'fs')
-    assert.equal(loadConfig({ ARTIFACTS_S3_BUCKET: 'b' }).storage, 's3')
+    assert.equal(loadConfig({ ARTIFACTS_S3_BUCKET: 'bkt' }).storage, 's3')
     assert.equal(loadConfig({ ARTIFACTS_S3_CONDITIONAL_WRITES: 'off' }).s3.conditionalWrites, false)
     assert.equal(loadConfig({ ARTIFACTS_S3_CONDITIONAL_WRITES: 'auto' }).s3.conditionalWrites, true)
   })
@@ -24,8 +24,13 @@ describe('configuration', () => {
     assert.ok(errors.some((e) => e.includes('credentials')))
   })
 
+  it('refuses an invalid bucket name at start', () => {
+    const { errors } = validateConfig(loadConfig({ ARTIFACTS_S3_BUCKET: 'ci', AWS_ACCESS_KEY_ID: 'k', AWS_SECRET_ACCESS_KEY: 's', ARTIFACTS_TOKEN: 'x'.repeat(32) }))
+    assert.ok(errors.some((e) => e.startsWith('ARTIFACTS_S3_BUCKET: bucket name "ci" must be 3 to 63')))
+  })
+
   it('accepts AWS_* credentials and infers path-style for custom endpoints', () => {
-    const config = loadConfig({ ARTIFACTS_S3_BUCKET: 'b', ARTIFACTS_S3_ENDPOINT: 'http://minio:9000', AWS_ACCESS_KEY_ID: 'k', AWS_SECRET_ACCESS_KEY: 's', ARTIFACTS_TOKEN: 'x'.repeat(32) })
+    const config = loadConfig({ ARTIFACTS_S3_BUCKET: 'bkt', ARTIFACTS_S3_ENDPOINT: 'http://minio:9000', AWS_ACCESS_KEY_ID: 'k', AWS_SECRET_ACCESS_KEY: 's', ARTIFACTS_TOKEN: 'x'.repeat(32) })
     assert.equal(config.s3.forcePathStyle, true)
     assert.equal(config.s3.accessKeyId, 'k')
     assert.deepEqual(validateConfig(config).errors, [])
