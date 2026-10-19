@@ -1,0 +1,9 @@
+{
+  "name": "artifacts",
+  "version": "0.1.0",
+  "description": "Skill for coding agents: find, publish, version and share documents in an artifacts catalog.",
+  "homepage": "https://github.com/ly-solutions/artifacts",
+  "repository": "https://github.com/ly-solutions/artifacts",
+  "license": "Apache-2.0",
+  "keywords": ["documents", "artifacts", "catalog"]
+}

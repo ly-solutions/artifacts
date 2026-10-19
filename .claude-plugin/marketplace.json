@@ -1,0 +1,14 @@
+{
+  "name": "ly-solutions-artifacts",
+  "owner": {
+    "name": "Ly Solutions",
+    "url": "https://github.com/ly-solutions"
+  },
+  "plugins": [
+    {
+      "name": "artifacts",
+      "source": "./",
+      "description": "Find, publish, version and share documents in an artifacts catalog."
+    }
+  ]
+}
