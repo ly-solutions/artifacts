@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Commands, requests or steps. Remove tokens and secrets.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Image tag, npm version or commit.
+    validations:
+      required: true
+  - type: dropdown
+    id: run
+    attributes:
+      label: How you run it
+      options: [Docker Compose, Docker, Helm / Kubernetes, Node.js, Other]
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage
+      options: [AWS S3, MinIO, Other S3-compatible, fs]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: text

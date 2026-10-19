@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ly-solutions/artifacts/security/advisories/new
+    about: Please report security problems privately.
+  - name: Documentation
+    url: https://github.com/ly-solutions/artifacts/tree/main/docs
+    about: Configuration, API, storage and deployment guides.

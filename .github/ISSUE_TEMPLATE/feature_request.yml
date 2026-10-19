@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest a change or a new capability.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: job
+    attributes:
+      label: What are you trying to get done?
+      description: The situation, what you do today, and where artifacts gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: Your idea of the change, if you have one.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
