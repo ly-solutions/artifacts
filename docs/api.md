@@ -1,0 +1,190 @@
+# HTTP API
+
+All API routes live under `/api/v1`, take and return JSON, and authenticate with
+`Authorization: Bearer <token>` (or the browser session cookie on the server's own pages).
+
+| Role | Can |
+|---|---|
+| `viewer` | search, read metadata, versions and content |
+| `editor` | everything a viewer can, plus publish, edit metadata, share, unshare, delete |
+
+Errors share one shape, written so an agent can fix the request instead of retrying it:
+
+```json
+{ "error": "invalid", "problems": ["slug: lowercase latin letters, digits and dashes, 2 to 80 characters"] }
+```
+
+| Status | `error` | Meaning |
+|---|---|---|
+| 400 | `invalid`, `bad_json` | The body is wrong; `problems` lists every reason. |
+| 401 | `unauthorized` | No token or a wrong one. |
+| 403 | `forbidden`, `cross_site` | Read-only token, or a cookie-authenticated write from another site. |
+| 404 | `not_found`, `version_not_found` | No such artifact or version. |
+| 409 | `duplicate` | Publishing without a slug, and an artifact with the same title exists. `candidates` lists them. |
+| 409 | `version_conflict` | `baseVersion` is older than the current version. |
+| 413 | `invalid` | The document is larger than `ARTIFACTS_MAX_DOCUMENT_BYTES`. |
+| 415 | `unsupported_media_type` | Send `Content-Type: application/json`. |
+| 503 | `unavailable`, `busy` | Storage did not answer, or too many concurrent writes to one artifact. Retry. |
+
+## The artifact object
+
+```json
+{
+  "slug": "checkout-latency-incident-14-march-vtto3m",
+  "title": "Checkout latency incident, 14 March",
+  "description": "A leaked connection pool slowed EU checkout for 38 minutes",
+  "author": "Ada",
+  "tags": ["incident", "payments", "postmortem"],
+  "task": "PROJ-342",
+  "taskUrl": "https://tracker.example.com/issue/PROJ-342",
+  "link": "https://git.example.com/shop/payments/-/merge_requests/918",
+  "session": "conv-31c7",
+  "sessionUrl": "https://workspace.example.com/sessions/conv-31c7",
+  "public": false,
+  "createdAt": "2026-10-19T20:12:31Z",
+  "updatedAt": "2026-10-19T20:12:32Z",
+  "versionCount": 3,
+  "currentVersion": { "n": 3, "id": "20261019T201232Z-9c41ab", "createdAt": "2026-10-19T20:12:32Z", "author": "Ada", "note": "timeline checked against the deploy log", "formats": ["html"], "bytes": 2817 },
+  "viewUrl": "https://artifacts.example.com/a/checkout-latency-incident-14-march-vtto3m",
+  "embedUrl": "https://artifacts.example.com/embed/checkout-latency-incident-14-march-vtto3m"
+}
+```
+
+`taskUrl` and `sessionUrl` are filled from `ARTIFACTS_TASK_URL` and `ARTIFACTS_SESSION_URL`; `public` is true
+while share links work. Single-artifact answers also carry `versions`, newest first.
+
+## Routes
+
+### `GET /api/v1/artifacts` — list and search
+
+Query: `q` (words; all must match title, slug, tags, description, task, author or text), `tag` (repeatable;
+all must be present), `task`, `session`, `author`, `limit` (default 50, max 500), `offset`.
+
+```json
+{ "total": 2, "items": [ { "...artifact": "...", "score": 21, "snippet": "…join one incident review as an observer…" } ] }
+```
+
+Results are ranked when `q` is set (title hits weigh most, then tags, then metadata, then text) and otherwise
+ordered by last update.
+
+### `POST /api/v1/artifacts` — publish
+
+```json
+{
+  "title": "Checkout latency incident, 14 March",
+  "html": "<h1>…</h1>…",
+  "markdown": "# …",
+  "slug": "checkout-latency-incident-14-march-vtto3m",
+  "note": "added the timeline",
+  "description": "…", "tags": ["incident"], "task": "PROJ-342", "link": "https://…", "session": "conv-31c7",
+  "author": "Ada",
+  "baseVersion": 2,
+  "new": false
+}
+```
+
+- `html` or `markdown` (or both) is required. A fragment without `<html>` and a Markdown-only version are shown
+  in the built-in typography; a full document is shown as published.
+- `title` may be omitted when the document has a `<title>`, `<h1>` or `# Heading`.
+- With `slug`: a new version of that artifact (created if the slug is free). Without it: a new artifact, unless one
+  with the same normalised title (or the same task and a close title) exists — then `409 duplicate`. `new: true`
+  skips that check.
+- Fields that are not sent keep their previous values; `null` clears `description`, `task`, `link`, `session`.
+- `baseVersion` makes the write conditional: `409 version_conflict` if someone published in between.
+- `public` is refused here: publishing never changes who can read.
+
+Answer `201` (created) or `200` (new version):
+
+```json
+{ "created": false, "version": { "n": 3, "id": "20261019T201232Z-9c41ab", "...": "..." }, "artifact": { "...": "..." } }
+```
+
+### `GET /api/v1/artifacts/{slug}`
+
+`{ "artifact": { …, "versions": [ …newest first… ] } }`
+
+### `PATCH /api/v1/artifacts/{slug}` — metadata
+
+Any of `title`, `description`, `tags`, `addTags`, `removeTags`, `task`, `link`, `session`, `public`. No new version
+is created. `public: false` turns sharing off and revokes every share link issued so far; `public: true` turns it
+on and the answer carries a `shareUrl`.
+
+### `DELETE /api/v1/artifacts/{slug}`
+
+Deletes the artifact and every version. `{ "deleted": "<slug>" }`.
+
+### `GET /api/v1/artifacts/{slug}/versions`
+
+`{ "slug": "…", "versions": [ { "n": 3, "id": "…", "createdAt": "…", "author": "…", "note": "…", "formats": ["html"], "bytes": 2817, "current": true }, … ] }`
+
+Versions imported from git carry `"source": "git"` and keep the commit sha as `id`.
+
+### `GET /api/v1/artifacts/{slug}/content`
+
+Query: `v` (version number, version id or an unambiguous id prefix of 7+ characters; default latest),
+`format` = `html` (the published source, as `text/plain`), `markdown` (`text/markdown`) or `json`
+(`{ slug, version, html, markdown }`). The `X-Artifact-Version` header carries the version number.
+
+### `POST /api/v1/artifacts/{slug}/share`
+
+Body (optional): `{ "expiresIn": "7d", "rotate": false }`. Turns sharing on and returns a signed link:
+
+```json
+{ "url": "https://artifacts.example.com/s/eyJzIjoi….bAwLeu0N…", "expiresAt": "2026-10-26T20:12:32.000Z", "artifact": { "...": "..." } }
+```
+
+Every call issues a new link; earlier links keep working until they expire or sharing is turned off.
+`rotate: true` revokes earlier links first.
+
+### `DELETE /api/v1/artifacts/{slug}/share`
+
+Turns sharing off; every link issued before stops working, including ones not yet expired.
+
+### `GET /api/v1/tags`
+
+`{ "tags": [ { "tag": "incident", "count": 4 }, … ] }`
+
+### `GET /api/v1/whoami`
+
+`{ "name": "token", "role": "editor", "via": "bearer", "auth": "token" }`
+
+## Pages and content
+
+| Path | What |
+|---|---|
+| `/` | Catalog with search and tag filters. `?q=`, `?tag=`. |
+| `/a/{slug}` | Reader: metadata, version picker, share and edit dialogs, download. `?v=` picks a version. |
+| `/embed/{slug}` | Reader without the catalog chrome, for framing in another app (`ARTIFACTS_FRAME_ANCESTORS`). Posts `{type: "artifacts:ready", slug, version}` to the parent. |
+| `/a/{slug}/raw` | The rendered document alone, sandboxed. `?v=`, `?theme=light\|dark`, `?download=html\|markdown`. |
+| `/s/{token}` | Shared, read-only reader; `/s/{token}/raw` the document. Refusals are indistinguishable 404s. |
+| `/login`, `/logout`, `/auth/callback` | Sign-in for `token` and `oidc` modes. |
+| `/healthz`, `/readyz` | Liveness, and readiness including a storage check. |
+
+Documents served by `/raw` carry `Content-Security-Policy: sandbox allow-scripts allow-popups …` without
+`allow-same-origin`: their scripts run in an opaque origin, cannot read cookies or call the API, and cannot
+fetch anywhere unless `ARTIFACTS_CONTENT_CONNECT_SRC` allows it. A framed reader page can switch the theme of a
+wrapped document with `postMessage({type: "artifacts:theme", theme: "light" | "dark" | "auto"}, "*")`.
+
+## Webhooks
+
+With `ARTIFACTS_WEBHOOK_URL` set, every change POSTs:
+
+```json
+{ "event": "artifact.updated", "at": "2026-10-19T20:12:32Z", "artifact": { "...artifact object...": "" } }
+```
+
+Events: `artifact.published`, `artifact.updated` (new version), `artifact.meta`, `artifact.shared`,
+`artifact.unshared`, `artifact.deleted` (carries only `slug`). With `ARTIFACTS_WEBHOOK_SECRET`, the header
+`X-Artifacts-Signature: sha256=<hex HMAC-SHA256 of the raw body>` authenticates the call. Delivery is
+best-effort (one attempt, 5 s timeout); use the API to reconcile.
+
+## Compatibility routes
+
+Clients of the earlier internal service keep working:
+
+| Route | Behaviour |
+|---|---|
+| `POST /a` | Same body as `POST /api/v1/artifacts`; `rotateKey: true` revokes the share links of a shared artifact. Answers `{slug, public, viewUrl, publicUrl?, version, versionInfo: {n, sha}, created}`. |
+| `PATCH /a/{slug}` | Same body as the metadata `PATCH`. Answers `{ok, slug, title, description, task, tags, public, viewUrl, publicUrl?}`. |
+| `GET /a/{slug}/versions` | `{versions: [{n, id, sha, createdAt, author, note, current, …}]}` |
+| `GET /a/{slug}?k=<key>` | Old share links of imported documents, while the document stays shared. |

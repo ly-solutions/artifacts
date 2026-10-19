@@ -1,0 +1,28 @@
+<h1>Checkout latency incident, 14 March</h1>
+<p>For 38 minutes, checkout requests in the EU region took up to 9 seconds and 4% of them failed. The cause was a connection pool that the new payment client never released after a timeout. This review covers what happened, why our alerts were late, and what changed.</p>
+<artifact-widget type="kpi">{"items":[{"label":"Duration","value":"38 min"},{"label":"Failed checkouts","value":"4.1%","delta":"+3.8 pp","tone":"bad"},{"label":"p95 latency","value":"9.2 s","delta":"+8.7 s","tone":"bad"},{"label":"Time to detect","value":"11 min","hint":"target: 3 min"}]}</artifact-widget>
+<h2>Timeline</h2>
+<table>
+<thead><tr><th>Time (UTC)</th><th>Event</th></tr></thead>
+<tbody>
+<tr><td>09:12</td><td>Payment client 2.4 rolled out to 50% of pods.</td></tr>
+<tr><td>09:19</td><td>First timeouts from the card processor; pool usage climbs.</td></tr>
+<tr><td>09:30</td><td>p95 latency alert fires; on-call acknowledges.</td></tr>
+<tr><td>09:41</td><td>Rollback started after the deploy was correlated with the spike.</td></tr>
+<tr><td>09:50</td><td>Latency back to normal; failed orders retried automatically.</td></tr>
+</tbody>
+</table>
+<h2>Root cause</h2>
+<p>The client acquired a connection before the request deadline was checked. On timeout the error path returned early and skipped <code>release()</code>, so every timeout leaked one connection until the pool of 64 was exhausted.</p>
+<pre><code>conn := pool.Acquire(ctx)
+if err := ctx.Err(); err != nil {
+    return err // leaked: conn is never released
+}
+defer conn.Release()</code></pre>
+<h2>What we changed</h2>
+<ul>
+<li>Release is deferred right after acquire, and a lint rule flags the old pattern.</li>
+<li>Pool saturation alerts at 80% for two minutes, before latency moves.</li>
+<li>Payment client rollouts go 5% → 25% → 100% with a ten-minute hold.</li>
+</ul>
+<blockquote>Detection, not the bug, made this an incident: the pool was saturated for nine minutes before any alert looked at it.</blockquote>
