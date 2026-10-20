@@ -3,6 +3,9 @@
 # -- Number of pods. Must be 1 with storage.driver=fs.
 replicaCount: 2
 
+# -- Deployment strategy. Empty uses RollingUpdate (Recreate with storage.driver=fs). Set `type: Recreate` on a store that fails `artifacts storage-check`.
+strategy: {}
+
 image:
   # -- Image repository.
   repository: ghcr.io/ly-solutions/artifacts

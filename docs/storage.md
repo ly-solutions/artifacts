@@ -69,6 +69,32 @@ always goes to storage.
 
 For stores without conditional PUT, set `ARTIFACTS_S3_CONDITIONAL_WRITES=off` and run a single replica.
 
+### Stores without atomic preconditions
+
+Some S3-compatible stores check `If-None-Match` and `If-Match` correctly when requests arrive one at a time,
+but let several overlapping writes to the same key all succeed. One such store, measured in 2026, is
+Selectel object storage in ru-3. 8 simultaneous creates of one new key gave 7 or 8 successes, and 8
+simultaneous updates carrying the same ETag all succeeded. Without protection, two concurrent publishes of one
+document both report success and one version is lost.
+
+The S3 driver therefore sends conditional writes to one key one after another inside the process, so the store
+only sees sequential preconditions. Writes to different keys and unconditional writes still run in parallel.
+That covers one process. Two processes still race, so on such a store:
+
+- run **one replica**;
+- deploy with **`strategy: Recreate`** so the old and the new pod never overlap (Helm: `strategy.type: Recreate`).
+
+Check your store before running more than one replica:
+
+```sh
+artifacts storage-check                       # the store from ARTIFACTS_* variables
+artifacts storage-check --storage s3://bucket/prefix --parallel 16
+```
+
+It writes two temporary objects under `system/` and removes them again. It exits 0 when exactly one of N
+overlapping creates and exactly one of N overlapping updates win, and 1 otherwise, with the counts in its report.
+AWS S3 and MinIO pass.
+
 ### Backups
 
 Copy the bucket or prefix with any tool (`aws s3 sync`, `rclone`, `mc mirror`, provider replication), or use

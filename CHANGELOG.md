@@ -6,8 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Lost versions on S3-compatible stores whose preconditions are not atomic under concurrency (seen on Selectel
+  ru-3). Two simultaneous publishes of one document both answered `created` and one version vanished. The S3
+  driver now serialises conditional writes per key inside the process. See docs/storage.md, "Stores without
+  atomic preconditions".
+
 ### Added
 
+- `artifacts storage-check`: measures whether the store refuses overlapping conflicting writes, so operators know
+  whether more than one replica is safe.
+- Helm `strategy` value (set `type: Recreate` on a store that fails `storage-check`).
 - List pagination you can follow: `GET /api/v1/artifacts` answers with `offset`, `limit` and `nextOffset`
   (`null` on the last page) plus a `Link: rel="next"` header; the catalog page pages by 200 with Newer/Older
   links instead of silently showing only the first 200; `artifacts find` takes `--offset` and `--all`.

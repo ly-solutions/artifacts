@@ -7,8 +7,13 @@
  * MinIO support both. For a store that does not, set
  * ARTIFACTS_S3_CONDITIONAL_WRITES=off: the driver then checks the ETag itself
  * right before writing, which is only safe with a single writer.
+ *
+ * Conditional writes to one key are also serialised inside the process: some stores
+ * evaluate preconditions correctly only when requests do not overlap (see
+ * docs/storage.md, "Stores without atomic preconditions").
  */
 import { ConflictError, StorageError, assertKey } from './index.mjs'
+import { KeyedLock } from './lock.mjs'
 import { signRequest, uriEncode } from './sigv4.mjs'
 
 const RETRIES = 3
@@ -52,6 +57,7 @@ export class S3Storage {
     this.region = region
     this.credentials = { accessKeyId, secretAccessKey, sessionToken }
     this.conditionalWrites = conditionalWrites
+    this.locks = new KeyedLock()
     this.fetch = fetchImpl
     const base = endpoint ? endpoint.replace(/\/$/, '') : `https://s3.${region}.amazonaws.com`
     this.pathStyle = forcePathStyle ?? Boolean(endpoint)
@@ -123,7 +129,12 @@ export class S3Storage {
     }
   }
 
-  async put(key, body, { contentType = 'application/octet-stream', ifMatch, ifNoneMatch } = {}) {
+  async put(key, body, options = {}) {
+    if (options.ifMatch === undefined && options.ifNoneMatch === undefined) return this.putNow(key, body, options)
+    return this.locks.run(key, () => this.putNow(key, body, options))
+  }
+
+  async putNow(key, body, { contentType = 'application/octet-stream', ifMatch, ifNoneMatch } = {}) {
     const data = Buffer.isBuffer(body) ? body : Buffer.from(body)
     const headers = { 'content-type': contentType }
     if (this.conditionalWrites) {

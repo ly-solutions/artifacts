@@ -30,7 +30,9 @@ and OIDC with workload identity (IRSA) instead of static S3 keys.
 
 ## Notes
 
-- **Storage.** `s3` (default) supports any number of replicas; writes are coordinated by conditional PUTs.
+- **Storage.** `s3` (default) supports any number of replicas on a store whose conditional PUTs are atomic
+  (AWS S3, MinIO); check yours with `artifacts storage-check`. On a store that fails it, set `replicaCount: 1`
+  and `strategy.type: Recreate` (see docs/storage.md, "Stores without atomic preconditions").
   `fs` stores data on one PersistentVolumeClaim and the chart refuses `replicaCount > 1` with it.
 - **Secrets.** Put tokens and keys in a Secret you manage (`existingSecret`), for example through External
   Secrets, Sealed Secrets or SOPS. The `secrets.*` values render a Secret from plain values, which is fine
@@ -48,6 +50,7 @@ and OIDC with workload identity (IRSA) instead of static S3 keys.
 | Key | Default | Description |
 |---|---|---|
 | `replicaCount` | `2` | Number of pods. Must be 1 with storage.driver=fs. |
+| `strategy` | `{}` | Deployment strategy. Empty uses RollingUpdate (Recreate with storage.driver=fs). Set `type: Recreate` on a store that fails `artifacts storage-check`. |
 | `image.repository` | `"ghcr.io/ly-solutions/artifacts"` | Image repository. |
 | `image.tag` | `""` | Image tag; defaults to the chart's appVersion. |
 | `image.pullPolicy` | `"IfNotPresent"` | Image pull policy. |

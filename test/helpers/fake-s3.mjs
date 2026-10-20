@@ -1,7 +1,8 @@
 /**
  * In-process S3 stand-in for tests: path-style GET/PUT/HEAD/DELETE, ListObjectsV2
  * with pagination, conditional PUT (If-Match / If-None-Match) and SigV4
- * verification of every request. Real-endpoint coverage comes from the MinIO
+ * verification of every request. racyPreconditionsMs imitates a store whose
+ * preconditions are not atomic under concurrency. Real-endpoint coverage comes from the MinIO
  * job (ARTIFACTS_TEST_S3_ENDPOINT).
  */
 import { createHash } from 'node:crypto'
@@ -11,7 +12,7 @@ import { signRequest } from '../../src/storage/sigv4.mjs'
 
 const xml = (value) => String(value).replace(/[<>&'"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[ch])
 
-export async function startFakeS3({ accessKeyId = 'test-access-key', secretAccessKey = 'fake'.repeat(8), region = 'us-east-1', pageSize = 1000, buckets = ['test-bucket'] } = {}) {
+export async function startFakeS3({ accessKeyId = 'test-access-key', secretAccessKey = 'fake'.repeat(8), region = 'us-east-1', pageSize = 1000, buckets = ['test-bucket'], racyPreconditionsMs = 0 } = {}) {
   const objects = new Map() // "bucket/key" -> { body, etag, contentType, modified }
   const known = new Set(buckets)
   const stats = { requests: 0, rejectedSignatures: 0, preconditionFailures: 0 }
@@ -98,6 +99,8 @@ export async function startFakeS3({ accessKeyId = 'test-access-key', secretAcces
         res.writeHead(412, { 'content-type': 'application/xml' })
         return res.end('<Error><Code>PreconditionFailed</Code></Error>')
       }
+      // Like a store that checks preconditions on arrival but commits later: overlapping writes all pass.
+      if (racyPreconditionsMs) await new Promise((resolve) => setTimeout(resolve, racyPreconditionsMs))
       const etag = `"${createHash('md5').update(body).digest('hex')}"`
       objects.set(id, { body, etag, contentType: req.headers['content-type'] ?? 'application/octet-stream', modified: new Date() })
       res.writeHead(200, { etag })

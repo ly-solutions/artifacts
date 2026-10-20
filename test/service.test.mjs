@@ -227,3 +227,23 @@ describe('webhooks', () => {
     }
   })
 })
+
+describe('concurrent publishes on a store without atomic preconditions', () => {
+  it('keeps every version that was reported as published', async () => {
+    const fake = await startFakeS3({ racyPreconditionsMs: 30 })
+    try {
+      const storage = new S3Storage(fake.settings)
+      const service = await new ArtifactService({ storage, config: testConfig() }).init()
+      const results = await Promise.allSettled(
+        Array.from({ length: 4 }, (_, i) => service.publish({ slug: 'race', html: `<p>writer ${i}</p>`, title: 'Race', new: i === 0 })),
+      )
+      const published = results.filter((r) => r.status === 'fulfilled').length
+      assert.ok(published >= 1)
+      const fresh = await new ArtifactService({ storage, config: testConfig() }).init()
+      const { meta } = await fresh.get('race')
+      assert.equal(meta.versions.length, published)
+    } finally {
+      await fake.close()
+    }
+  })
+})

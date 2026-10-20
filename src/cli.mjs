@@ -34,6 +34,8 @@ Server and operations (configured by ARTIFACTS_* variables, see docs/configurati
   artifacts migrate --from-git REPO --to s3://bucket/prefix|DIR [--dir artifacts] [--ref main]
                     [--only slug,slug] [--overwrite] [--dry-run]
   artifacts migrate --from s3://…|DIR --to s3://…|DIR [--overwrite]
+  artifacts storage-check [--storage s3://bucket/prefix|DIR] [--parallel 8]
+                          checks that the store refuses overlapping conflicting writes
 
 Publishing a new version of an existing document: pass its --slug and a --note.
 Without --slug the server refuses a title that already exists; --new overrides that.
@@ -362,6 +364,25 @@ async function storageFromUrl(url, env) {
   return createStorage({ storage: 's3', s3: { ...config.s3, bucket: target.bucket, prefix: target.prefix } })
 }
 
+async function cmdStorageCheck(args, env) {
+  const { probePreconditions } = await import('./storage/probe.mjs')
+  let storage
+  if (args.storage) storage = await storageFromUrl(args.storage, env)
+  else {
+    const { createStorage } = await import('./storage/index.mjs')
+    const { loadConfig } = await import('./config.mjs')
+    storage = await createStorage(loadConfig(env))
+  }
+  const parallel = Number(args.parallel ?? 8)
+  if (!Number.isInteger(parallel) || parallel < 2 || parallel > 64) throw new UsageError('--parallel takes a number from 2 to 64')
+  const report = await probePreconditions(storage, { parallel })
+  out(JSON.stringify(report, null, 2))
+  if (!report.sequential) note('the store accepts conflicting writes even one at a time: set ARTIFACTS_S3_CONDITIONAL_WRITES=off and run one replica')
+  else if (!report.atomic) note(`overlapping writes: ${report.creates} of ${parallel} creates and ${report.updates} of ${parallel} updates won (1 expected each). Writes inside one process are serialised; run one replica with strategy Recreate (docs/storage.md)`)
+  else note('the store refuses overlapping conflicting writes: any number of replicas is safe')
+  return report.atomic ? 0 : 1
+}
+
 async function cmdMigrate(args, env) {
   if (!args.to) throw new UsageError('migrate needs --to s3://bucket/prefix or a directory')
   const { createLogger } = await import('./server.mjs')
@@ -468,6 +489,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
         return await cmdServe(env)
       case 'migrate':
         return await cmdMigrate(args, env)
+      case 'storage-check':
+        return await cmdStorageCheck(args, env)
       case 'publish':
         return await cmdPublish(args, env, request)
       case 'find':

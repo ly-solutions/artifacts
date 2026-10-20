@@ -35,7 +35,7 @@ mode, no bucket for S3, an invalid regular expression) and says which variable t
 | `ARTIFACTS_S3_SECRET_ACCESS_KEY` | `AWS_SECRET_ACCESS_KEY` | **Required for s3.** Secret key. |
 | `ARTIFACTS_S3_SESSION_TOKEN` | `AWS_SESSION_TOKEN` | Session token for temporary credentials. |
 | `ARTIFACTS_S3_CREATE_BUCKET` | `false` | Create the bucket at start if it is missing (handy with MinIO in compose). |
-| `ARTIFACTS_S3_CONDITIONAL_WRITES` | `auto` | `auto`/`on`: use `If-Match` / `If-None-Match` on PUT for safe concurrent writes. `off`: check the ETag before writing instead, for a store without conditional PUT; then run one replica. |
+| `ARTIFACTS_S3_CONDITIONAL_WRITES` | `auto` | `auto`/`on`: use `If-Match` / `If-None-Match` on PUT for safe concurrent writes. `off`: check the ETag before writing instead, for a store without conditional PUT; then run one replica. Run `artifacts storage-check` before using more than one replica: some stores evaluate preconditions only one request at a time (docs/storage.md). |
 
 The bucket needs `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` and `s3:ListBucket` on the prefix.
 See [storage.md](storage.md) for the layout.

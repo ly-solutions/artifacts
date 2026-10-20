@@ -12,6 +12,7 @@ import { mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promis
 import { dirname, join, relative, sep } from 'node:path'
 
 import { assertKey, ConflictError } from './index.mjs'
+import { KeyedLock } from './lock.mjs'
 
 const etagOf = (st) => `"${st.size.toString(16)}-${st.mtimeNs.toString(16)}"`
 
@@ -20,7 +21,7 @@ export class FsStorage {
     if (!dir) throw new Error('fs storage needs a directory (ARTIFACTS_DATA_DIR)')
     this.name = 'fs'
     this.root = dir
-    this.locks = new Map()
+    this.locks = new KeyedLock()
   }
 
   path(key) {
@@ -118,20 +119,8 @@ export class FsStorage {
     await rm(probe, { force: true })
   }
 
-  async withLock(key, fn) {
-    const previous = this.locks.get(key) ?? Promise.resolve()
-    let release
-    const current = new Promise((resolve) => {
-      release = resolve
-    })
-    const chained = previous.then(() => current)
-    this.locks.set(key, chained)
-    await previous
-    try {
-      return await fn()
-    } finally {
-      release()
-      if (this.locks.get(key) === chained) this.locks.delete(key)
-    }
+  withLock(key, fn) {
+    return this.locks.run(key, fn)
   }
+
 }

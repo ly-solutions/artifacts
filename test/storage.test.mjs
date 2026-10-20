@@ -210,3 +210,56 @@ describe('sigv4', () => {
     }
   })
 })
+
+describe('stores without atomic preconditions', () => {
+  it('lets exactly one of many overlapping conditional writes win', async () => {
+    const fake = await startFakeS3({ racyPreconditionsMs: 30 })
+    try {
+      const storage = new S3Storage(fake.settings)
+      const creates = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => storage.put('race/new.json', Buffer.from(String(i)), { ifNoneMatch: '*' })))
+      assert.equal(creates.filter((r) => r.status === 'fulfilled').length, 1)
+      assert.ok(creates.filter((r) => r.status === 'rejected').every((r) => r.reason instanceof ConflictError))
+
+      const { etag } = await storage.head('race/new.json')
+      const updates = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => storage.put('race/new.json', Buffer.from(`u${i}`), { ifMatch: etag })))
+      assert.equal(updates.filter((r) => r.status === 'fulfilled').length, 1)
+      assert.equal(storage.locks.size, 0)
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('does not serialise unconditional writes or writes to different keys', async () => {
+    const fake = await startFakeS3({ racyPreconditionsMs: 30 })
+    try {
+      const storage = new S3Storage(fake.settings)
+      const started = Date.now()
+      await Promise.all(Array.from({ length: 8 }, (_, i) => storage.put(`race/k${i}.json`, Buffer.from('x'), { ifNoneMatch: '*' })))
+      assert.ok(Date.now() - started < 8 * 30, 'different keys should be written in parallel')
+    } finally {
+      await fake.close()
+    }
+  })
+})
+
+describe('storage-check probe', () => {
+  it('tells an atomic store from one that only checks one request at a time', async () => {
+    const { probePreconditions } = await import('../src/storage/probe.mjs')
+    const good = await startFakeS3()
+    const racy = await startFakeS3({ racyPreconditionsMs: 30 })
+    try {
+      const ok = await probePreconditions(new S3Storage(good.settings))
+      assert.deepEqual(ok, { sequential: true, parallel: 8, creates: 1, updates: 1, atomic: true })
+      const bad = await probePreconditions(new S3Storage(racy.settings))
+      assert.equal(bad.sequential, true)
+      assert.equal(bad.atomic, false)
+      assert.ok(bad.creates > 1 && bad.updates > 1)
+      const left = []
+      for await (const item of new S3Storage(racy.settings).list('system/')) left.push(item.key)
+      assert.deepEqual(left, [])
+    } finally {
+      await good.close()
+      await racy.close()
+    }
+  })
+})
