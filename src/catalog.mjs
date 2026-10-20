@@ -13,9 +13,10 @@ import { htmlToText, markdownToText, normalizeTitle } from './text.mjs'
 const TEXT_LIMIT = 200_000
 
 export class Catalog {
-  constructor({ store, refreshSeconds = 10, log = () => {} }) {
+  constructor({ store, refreshSeconds = 10, concurrency = 16, log = () => {} }) {
     this.store = store
     this.refreshMs = refreshSeconds * 1000
+    this.concurrency = concurrency
     this.log = log
     this.entries = new Map() // slug -> { meta, etag, text }
     this.lastRefresh = 0
@@ -57,7 +58,7 @@ export class Catalog {
         }
       }
     }
-    await Promise.all(Array.from({ length: Math.min(8, queue.length) }, worker))
+    await Promise.all(Array.from({ length: Math.min(this.concurrency, queue.length) }, worker))
     this.lastRefresh = Date.now()
   }
 

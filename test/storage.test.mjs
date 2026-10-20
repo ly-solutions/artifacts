@@ -263,3 +263,70 @@ describe('storage-check probe', () => {
     }
   })
 })
+
+describe('read cache', () => {
+  it('serves immutable keys from memory and revalidates the rest with HEAD', async () => {
+    const { CachedStorage } = await import('../src/storage/cache.mjs')
+    const fake = await startFakeS3()
+    try {
+      const raw = new S3Storage(fake.settings)
+      const methods = []
+      const fetchImpl = raw.fetch
+      raw.fetch = (url, init) => {
+        methods.push(init.method)
+        return fetchImpl(url, init)
+      }
+      const cache = new CachedStorage(raw, { maxBytes: 1024 * 1024, isImmutable: (key) => key.startsWith('content/') })
+
+      await raw.put('content/a/v1/index.html', Buffer.from('<p>v1</p>'))
+      await raw.put('meta/a.json', Buffer.from('{"n":1}'))
+      methods.length = 0
+
+      assert.equal((await cache.get('content/a/v1/index.html')).body.toString(), '<p>v1</p>')
+      assert.equal((await cache.get('content/a/v1/index.html')).body.toString(), '<p>v1</p>')
+      assert.deepEqual(methods, ['GET'])
+
+      methods.length = 0
+      await cache.get('meta/a.json')
+      await cache.get('meta/a.json')
+      assert.deepEqual(methods, ['GET', 'HEAD'])
+
+      // Another replica changes the manifest: the HEAD sees a new ETag and the body is read again.
+      await raw.put('meta/a.json', Buffer.from('{"n":2}'))
+      methods.length = 0
+      assert.equal((await cache.get('meta/a.json')).body.toString(), '{"n":2}')
+      assert.deepEqual(methods, ['HEAD', 'GET'])
+
+      // A write through the cache is read back without a GET; a delete elsewhere is noticed.
+      await cache.put('meta/b.json', Buffer.from('{"b":1}'), { ifNoneMatch: '*' })
+      methods.length = 0
+      assert.equal((await cache.get('meta/b.json')).body.toString(), '{"b":1}')
+      assert.deepEqual(methods, ['HEAD'])
+      await raw.delete('meta/b.json')
+      assert.equal(await cache.get('meta/b.json'), null)
+
+      // A failed conditional write drops the entry instead of keeping a guess.
+      await assert.rejects(cache.put('meta/a.json', Buffer.from('x'), { ifMatch: '"stale"' }), ConflictError)
+      assert.equal(cache.entries.has('meta/a.json'), false)
+      assert.equal(cache.stats.hits, 1)
+    } finally {
+      await fake.close()
+    }
+  })
+
+  it('stays within its byte budget', async () => {
+    const { CachedStorage } = await import('../src/storage/cache.mjs')
+    const fake = await startFakeS3()
+    try {
+      const cache = new CachedStorage(new S3Storage(fake.settings), { maxBytes: 8000, isImmutable: () => true })
+      for (let i = 0; i < 10; i += 1) await cache.put(`content/k${i}`, Buffer.alloc(900, 97))
+      await cache.put('content/huge', Buffer.alloc(2000, 97))
+      assert.ok(cache.bytes <= 8000)
+      assert.equal(cache.entries.has('content/huge'), false)
+      assert.equal(cache.entries.has('content/k0'), false)
+      assert.equal(cache.entries.has('content/k9'), true)
+    } finally {
+      await fake.close()
+    }
+  })
+})

@@ -40,6 +40,10 @@ config:
   logFormat: json
   # -- How often replicas look for each other's writes.
   indexRefresh: 10s
+  # -- How many documents the index reads at once when it starts or catches up.
+  indexConcurrency: 16
+  # -- In-memory read cache for the s3 driver, in MiB (0 turns it off). Keep it below the memory limit.
+  cacheMb: 128
   # -- Largest accepted version, in bytes.
   maxDocumentBytes: 8388608
 

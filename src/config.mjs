@@ -35,6 +35,13 @@ export function parseDuration(value, name = 'duration') {
 
 export const AUTH_MODES = ['token', 'oidc', 'proxy', 'none']
 
+const intIn = (raw, fallback, min, max, name) => {
+  if (raw === undefined || raw === '') return fallback
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${name} must be a whole number from ${min} to ${max}`)
+  return value
+}
+
 export function loadConfig(env = process.env) {
   const port = int(env.ARTIFACTS_PORT ?? env.PORT, 8080, 'ARTIFACTS_PORT')
   const publicUrl = (env.ARTIFACTS_PUBLIC_URL || `http://localhost:${port}`).replace(/\/$/, '')
@@ -125,7 +132,11 @@ export function loadConfig(env = process.env) {
     },
     index: {
       refreshSeconds: parseDuration(env.ARTIFACTS_INDEX_REFRESH || '10s', 'ARTIFACTS_INDEX_REFRESH'),
+      // How many documents the index reads at once; a store with slow reads wants more.
+      concurrency: intIn(env.ARTIFACTS_INDEX_CONCURRENCY, 16, 1, 128, 'ARTIFACTS_INDEX_CONCURRENCY'),
     },
+    // In-memory read cache for the s3 driver, in MiB; 0 turns it off.
+    cacheMb: intIn(env.ARTIFACTS_CACHE_MB, 128, 0, 65536, 'ARTIFACTS_CACHE_MB'),
     log: {
       level: (env.ARTIFACTS_LOG_LEVEL || 'info').toLowerCase(),
       format: (env.ARTIFACTS_LOG_FORMAT || 'json').toLowerCase(),

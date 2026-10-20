@@ -49,7 +49,7 @@ export class ArtifactService {
     this.plugins = plugins
     this.storage = storage
     this.store = new ArtifactStore(storage)
-    this.catalog = new Catalog({ store: this.store, refreshSeconds: config.index.refreshSeconds, log })
+    this.catalog = new Catalog({ store: this.store, refreshSeconds: config.index.refreshSeconds, concurrency: config.index.concurrency, log })
     this.log = log
     this.fetch = fetchImpl
     this.taskRe = new RegExp(config.links.taskPattern)

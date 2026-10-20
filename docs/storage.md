@@ -95,6 +95,19 @@ It writes two temporary objects under `system/` and removes them again. It exits
 overlapping creates and exactly one of N overlapping updates win, and 1 otherwise, with the counts in its report.
 AWS S3 and MinIO pass.
 
+### Stores with slow reads
+
+Some stores start sending an object only after seconds while HEAD and listings stay fast. One example is Selectel
+ru-3, measured in 2026 at about 4 s per GET whatever the size, against 0.1–0.3 s for HEAD and LIST. The s3 driver
+keeps a read cache in memory (`ARTIFACTS_CACHE_MB`, 128 MiB by default):
+
+- version content is written once and served from memory without asking the store;
+- manifests are revalidated with a HEAD and served from memory while the ETag is unchanged;
+- documents published through the replica are cached as they are written.
+
+Index build at start reads every current version, so it also fills the cache. Raise
+`ARTIFACTS_INDEX_CONCURRENCY` to shorten that start on a slow store.
+
 ### Backups
 
 Copy the bucket or prefix with any tool (`aws s3 sync`, `rclone`, `mc mirror`, provider replication), or use

@@ -53,7 +53,10 @@ export async function createStorage(config) {
     const { S3Storage } = await import('./s3.mjs')
     const storage = new S3Storage(config.s3)
     if (config.s3.createBucket) await storage.ensureBucket()
-    return storage
+    if (!config.cacheMb) return storage
+    const { CachedStorage } = await import('./cache.mjs')
+    // content/… objects are written once per version (see store.mjs) and never change.
+    return new CachedStorage(storage, { maxBytes: config.cacheMb * 1024 * 1024, isImmutable: (key) => key.startsWith('content/') })
   }
   throw new Error(`unknown storage driver "${config.storage}" (expected s3 or fs)`)
 }

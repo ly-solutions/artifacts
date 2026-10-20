@@ -56,6 +56,8 @@ spec:
             - { name: ARTIFACTS_LOG_LEVEL, value: {{ .Values.config.logLevel | quote }} }
             - { name: ARTIFACTS_LOG_FORMAT, value: {{ .Values.config.logFormat | quote }} }
             - { name: ARTIFACTS_INDEX_REFRESH, value: {{ .Values.config.indexRefresh | quote }} }
+            - { name: ARTIFACTS_INDEX_CONCURRENCY, value: {{ .Values.config.indexConcurrency | quote }} }
+            - { name: ARTIFACTS_CACHE_MB, value: {{ .Values.config.cacheMb | quote }} }
             - { name: ARTIFACTS_MAX_DOCUMENT_BYTES, value: {{ .Values.config.maxDocumentBytes | int | quote }} }
             - { name: ARTIFACTS_STORAGE, value: {{ .Values.storage.driver | quote }} }
             {{- if eq .Values.storage.driver "s3" }}

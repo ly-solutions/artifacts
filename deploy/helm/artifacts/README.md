@@ -65,6 +65,8 @@ and OIDC with workload identity (IRSA) instead of static S3 keys.
 | `config.logLevel` | `"info"` | Log level: debug, info, warn, error. |
 | `config.logFormat` | `"json"` | Log format: json or text. |
 | `config.indexRefresh` | `"10s"` | How often replicas look for each other's writes. |
+| `config.indexConcurrency` | `16` | How many documents the index reads at once when it starts or catches up. |
+| `config.cacheMb` | `128` | In-memory read cache for the s3 driver, in MiB (0 turns it off). Keep it below the memory limit. |
 | `config.maxDocumentBytes` | `8388608` | Largest accepted version, in bytes. |
 | `storage.driver` | `"s3"` | Storage driver: s3 or fs. |
 | `storage.s3.bucket` | `""` | Bucket name (required for s3). |

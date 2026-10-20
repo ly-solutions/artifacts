@@ -17,6 +17,8 @@ mode, no bucket for S3, an invalid regular expression) and says which variable t
 | `ARTIFACTS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `ARTIFACTS_LOG_FORMAT` | `json` | `json` (one object per line) or `text`. Share tokens and query strings are never logged. |
 | `ARTIFACTS_INDEX_REFRESH` | `10s` | How often the in-memory catalog index checks storage for changes made by other replicas. Writes made by the same replica are visible at once. |
+| `ARTIFACTS_INDEX_CONCURRENCY` | `16` | How many documents the index reads at once when it starts or catches up. |
+| `ARTIFACTS_CACHE_MB` | `128` | In-memory read cache for the s3 driver, in MiB (`0` turns it off). Version content is served from memory; manifests are revalidated with a HEAD. Matters on stores with slow GETs (docs/storage.md). |
 | `ARTIFACTS_MAX_DOCUMENT_BYTES` | `8388608` | Largest accepted version (HTML plus Markdown), in bytes. |
 | `ARTIFACTS_VERSION_ID` | `timestamp` | Format of new version ids. `timestamp`: `20261019T201232Z-9c41ab`, sortable and readable. `sha`: 40 lowercase hex characters (SHA-1 over the slug, the creation time and the content hash), for clients that expect git-shaped ids. Ids are opaque to clients; ids stored earlier, including commit shas kept by `migrate --from-git`, keep resolving after a switch. |
 
