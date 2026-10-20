@@ -30,7 +30,8 @@ artifacts find --session "$ARTIFACTS_SESSION"   # what this conversation already
 ```
 
 Read a hit before deciding: `artifacts get <slug> --format markdown` (or `--format html`), and
-`artifacts versions <slug>` for its history.
+`artifacts versions <slug>` for its history, `artifacts diff <slug>` for what the last version changed
+(`artifacts diff <slug> 2 5` between two versions).
 
 - Same subject → **update it** (section 3). This includes "v2", "final", "updated", "draft 2" and
   "for the new quarter" of the same document.
