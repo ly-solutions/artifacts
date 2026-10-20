@@ -44,8 +44,9 @@ const isUrl = (value) => {
 const fill = (template, name, value) => (template && value ? template.replaceAll(`{${name}}`, encodeURIComponent(value)) : null)
 
 export class ArtifactService {
-  constructor({ storage, config, log = () => {}, fetchImpl = fetch }) {
+  constructor({ storage, config, log = () => {}, fetchImpl = fetch, plugins = null }) {
     this.config = config
+    this.plugins = plugins
     this.storage = storage
     this.store = new ArtifactStore(storage)
     this.catalog = new Catalog({ store: this.store, refreshSeconds: config.index.refreshSeconds, log })
@@ -253,9 +254,10 @@ export class ArtifactService {
     const problems = this.validatePublish(body)
     if (problems.length) throw new ApiError(problems.some((p) => p.startsWith('document is')) ? 413 : 400, 'invalid', { problems })
 
-    const html = typeof body.html === 'string' && body.html.trim() ? body.html : undefined
-    const markdown = typeof body.markdown === 'string' && body.markdown.trim() ? body.markdown : undefined
-    const title = (body.title ?? titleFromMarkdown(markdown) ?? titleFromHtml(html) ?? '').trim()
+    let html = typeof body.html === 'string' && body.html.trim() ? body.html : undefined
+    let markdown = typeof body.markdown === 'string' && body.markdown.trim() ? body.markdown : undefined
+    let title = (body.title ?? titleFromMarkdown(markdown) ?? titleFromHtml(html) ?? '').trim()
+    let note = body.note?.trim() || null
     if (!title) throw new ApiError(400, 'invalid', { problems: ['title: required (or put a <title>, <h1> or "# Heading" in the document)'] })
 
     let slug = body.slug ?? null
@@ -271,6 +273,27 @@ export class ArtifactService {
     }
     if (!slug) slug = makeSlug(title)
 
+    if (this.plugins && !this.plugins.empty) {
+      const draft = { slug, title, html, markdown, note }
+      if (this.plugins.publishHooks.length) {
+        const found = await this.store.getManifest(slug)
+        const who = { name: principal.name ?? null, role: principal.role ?? null, via: principal.via ?? null }
+        await this.plugins.runPublishHooks(draft, { principal: who, existing: found ? this.present(found.meta) : null, body })
+      }
+      draft.html = await this.plugins.renderWidgets(draft.html, { phase: 'publish', slug, title: draft.title, version: null, shared: false })
+      ;({ html, markdown } = draft)
+      html = typeof html === 'string' && html.trim() ? html : undefined
+      markdown = typeof markdown === 'string' && markdown.trim() ? markdown : undefined
+      title = String(draft.title ?? '').trim()
+      note = typeof draft.note === 'string' && draft.note.trim() ? draft.note.trim().slice(0, NOTE_MAX) : null
+      const after = []
+      if (!html && !markdown) after.push('html or markdown: a publish hook left the document empty')
+      if (!title || title.length > TITLE_MAX) after.push(`title: 1 to ${TITLE_MAX} characters after publish hooks`)
+      const size = Buffer.byteLength(html ?? '') + Buffer.byteLength(markdown ?? '')
+      if (size > this.config.content.maxBytes) after.push(`document is ${size} bytes after rendering widgets, the limit is ${this.config.content.maxBytes} (ARTIFACTS_MAX_DOCUMENT_BYTES)`)
+      if (after.length) throw new ApiError(after.some((p) => p.startsWith('document is')) ? 413 : 400, 'invalid', { problems: after })
+    }
+
     const createdAt = stamp()
     const sha256 = createHash('sha256').update(html ?? '').update('\0').update(markdown ?? '').digest('hex')
     const versionId = await this.storeVersion({ slug, createdAt, sha256, html, markdown, explicitId: body.versionId ?? null })
@@ -279,7 +302,7 @@ export class ArtifactService {
       id: versionId,
       createdAt,
       author,
-      note: body.note?.trim() || null,
+      note,
       html: Boolean(html),
       markdown: Boolean(markdown),
       bytes: Buffer.byteLength(html ?? '') + Buffer.byteLength(markdown ?? ''),
@@ -521,9 +544,11 @@ export class ArtifactService {
   // ---- webhooks --------------------------------------------------------------
 
   notify(event, meta) {
+    const payload = { event, at: stamp(), artifact: meta.versions ? this.present(meta) : { slug: meta.slug } }
+    this.plugins?.emit(event, payload)
     const { url, secret } = this.config.webhook
     if (!url) return
-    const body = JSON.stringify({ event, at: stamp(), artifact: meta.versions ? this.present(meta) : { slug: meta.slug } })
+    const body = JSON.stringify(payload)
     const headers = { 'content-type': 'application/json', 'user-agent': 'artifacts-webhook' }
     if (secret) headers['x-artifacts-signature'] = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
     this.fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(5000) })

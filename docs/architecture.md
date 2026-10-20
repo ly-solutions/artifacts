@@ -72,6 +72,8 @@ word must match.
 | `src/store.mjs` | Storage layout on top of a driver |
 | `src/storage/` | `fs` and `s3` drivers, SigV4 |
 | `src/auth/` | Token, OIDC (code flow + PKCE, JWKS), trusted proxy, CIDR matching |
+| `src/plugins.mjs` | Plugin loader and host: widgets, routes, publish and read hooks, events |
+| `src/diff.mjs` | Line diff (Myers) and unified patches for version comparison |
 | `src/signing.mjs` | Signed share links and session cookies |
 | `src/render/` | Document typography, Markdown, widgets; server-rendered UI pages |
 | `src/migrate/git.mjs` | Import from a git repository; copy between stores |

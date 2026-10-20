@@ -100,6 +100,9 @@ spec:
             - { name: ARTIFACTS_CONTENT_FRAME_SRC, value: {{ .Values.content.frameSrc | quote }} }
             - { name: ARTIFACTS_SHARE_TTL, value: {{ .Values.share.ttl | quote }} }
             - { name: ARTIFACTS_VERSION_ID, value: {{ .Values.versions.idFormat | quote }} }
+            {{- with .Values.plugins.modules }}
+            - { name: ARTIFACTS_PLUGINS, value: {{ . | quote }} }
+            {{- end }}
             - { name: ARTIFACTS_WEBHOOK_URL, value: {{ .Values.webhook.url | quote }} }
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -132,6 +135,9 @@ spec:
             - name: data
               mountPath: /data
             {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -143,6 +149,9 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -173,6 +173,15 @@ secrets:
   webhookSecret: ""
 
 # -- Extra environment variables, e.g. AWS_REGION or proxy settings.
+# -- Plugins: comma-separated module paths or package names (ARTIFACTS_PLUGINS); mount files with extraVolumes.
+plugins:
+  modules: ""
+
+# -- Extra volumes, e.g. a ConfigMap holding a plugin.
+extraVolumes: []
+# -- Extra volume mounts for the server container, e.g. /plugins.
+extraVolumeMounts: []
+
 extraEnv: []
 # -- Extra env sources (ConfigMaps / Secrets).
 extraEnvFrom: []

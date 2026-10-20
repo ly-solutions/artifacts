@@ -24,6 +24,7 @@ COPY bin ./bin
 COPY src ./src
 COPY web ./web
 COPY skills ./skills
+COPY examples ./examples
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

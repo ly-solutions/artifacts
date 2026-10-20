@@ -247,6 +247,10 @@ fetch anywhere unless `ARTIFACTS_CONTENT_CONNECT_SRC` allows it, nor frame anyth
 `ARTIFACTS_CONTENT_FRAME_SRC` allows it. A framed reader page can switch the theme of a
 wrapped document with `postMessage({type: "artifacts:theme", theme: "light" | "dark" | "auto"}, "*")`.
 
+## Plugin routes
+
+Plugins add routes under `/x/…`, `/api/v1/x/…` and `/a/{slug}/x/…` only; see [plugins.md](plugins.md).
+
 ## Webhooks
 
 With `ARTIFACTS_WEBHOOK_URL` set, every change POSTs:

@@ -114,6 +114,9 @@ and OIDC with workload identity (IRSA) instead of static S3 keys.
 | `secrets.s3SecretAccessKey` | `""` | S3 secret access key. |
 | `secrets.oidcClientSecret` | `""` | OIDC client secret. |
 | `secrets.webhookSecret` | `""` | Webhook HMAC secret. |
+| `plugins.modules` | `""` | Plugin modules (`ARTIFACTS_PLUGINS`), e.g. `/plugins/acme/index.mjs`. |
+| `extraVolumes` | `[]` | Extra volumes, e.g. a ConfigMap holding a plugin. |
+| `extraVolumeMounts` | `[]` | Extra volume mounts for the server container. |
 | `extraEnv` | `[]` | Extra environment variables, e.g. AWS_REGION or proxy settings. |
 | `extraEnvFrom` | `[]` | Extra env sources (ConfigMaps / Secrets). |
 | `service.type` | `"ClusterIP"` | Service type. |

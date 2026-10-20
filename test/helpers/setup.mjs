@@ -22,11 +22,11 @@ export function testConfig(env = {}) {
 }
 
 /** Starts the HTTP app on a random port with fs storage (or the given storage). */
-export async function startApp(env = {}, { storage, fetchImpl } = {}) {
+export async function startApp(env = {}, { storage, fetchImpl, plugins } = {}) {
   const tmp = await tempDir()
   const config = testConfig(env)
   const store = storage ?? new FsStorage({ dir: tmp.dir })
-  const { server, service, auth } = await createApp(config, { storage: store, log: () => {}, fetchImpl })
+  const { server, service, auth } = await createApp(config, { storage: store, log: () => {}, fetchImpl, plugins })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${server.address().port}`
   const request = async (method, path, { body, token = TOKEN, headers = {}, raw = false } = {}) => {

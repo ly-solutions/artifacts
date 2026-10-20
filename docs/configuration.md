@@ -108,6 +108,13 @@ with spaces or semicolons are refused at start.
 | `ARTIFACTS_CONTENT_CONNECT_SRC` | empty (`'none'`) | Origins documents may fetch from. Keep it empty unless a document must call an API without cookie authentication. |
 | `ARTIFACTS_CONTENT_FRAME_SRC` | empty (`'none'`) | Origins documents may embed in an `<iframe>`, e.g. `https://boards.example.com` for whiteboards or `https://www.youtube-nocookie.com` for videos. A path narrows it (`https://tools.example.com/embed/`). The framed page still decides with its own `frame-ancestors` whether it agrees to be embedded. |
 
+## Plugins
+
+| Variable | Default | Description |
+|---|---|---|
+| `ARTIFACTS_PLUGINS` | empty | Plugin modules to load at start, comma-separated: paths (`/plugins/acme/index.mjs`, `./plugins/x.mjs`) or package names. A plugin that fails to load stops the start. See [plugins.md](plugins.md). |
+| `ARTIFACTS_WIDGET_TIMEOUT` | `5s` | How long one widget render may take before its placeholder is left in place. |
+
 ## Client (CLI)
 
 | Variable | Description |

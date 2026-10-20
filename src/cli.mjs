@@ -402,15 +402,27 @@ async function cmdServe(env) {
     for (const error of errors) log('error', error)
     return 2
   }
+  const { PluginError, loadPluginModules } = await import('./plugins.mjs')
+  let plugins
+  try {
+    plugins = await loadPluginModules(config.plugins.modules)
+  } catch (error) {
+    log('error', error.message)
+    return 2
+  }
   // Storage may come up after us (compose, a sidecar, a fresh bucket): wait up to a minute.
   let storage
   let app
   for (let attempt = 1; ; attempt += 1) {
     try {
       storage = await createStorage(config)
-      app = await createApp(config, { storage, log })
+      app = await createApp(config, { storage, log, plugins })
       break
     } catch (error) {
+      if (error instanceof PluginError) {
+        log('error', error.message)
+        return 2
+      }
       if (attempt >= 30) {
         log('error', 'storage is not reachable, giving up', { error: error.message })
         return 1

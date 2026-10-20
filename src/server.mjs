@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canShare, canWrite, parseCookies } from './auth/index.mjs'
 import { parseDuration } from './config.mjs'
 import { unifiedDiff } from './diff.mjs'
+import { PluginHost, isApiErrorLike, loadPluginModules } from './plugins.mjs'
 import { renderVersion } from './render/doc.mjs'
 import { catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
 import { ApiError, ArtifactService } from './service.mjs'
@@ -66,8 +67,14 @@ async function readJson(req, limit) {
   }
 }
 
-export async function createApp(config, { storage, log = createLogger(config.log), fetchImpl = fetch } = {}) {
-  const service = await new ArtifactService({ storage, config, log, fetchImpl }).init()
+/**
+ * Builds the HTTP server. `plugins`: already imported plugin modules or plugin objects; when omitted,
+ * the modules named in ARTIFACTS_PLUGINS are imported.
+ */
+export async function createApp(config, { storage, log = createLogger(config.log), fetchImpl = fetch, plugins } = {}) {
+  const host = new PluginHost({ log, widgetTimeoutMs: (config.plugins?.widgetTimeout ?? 5) * 1000 })
+  const service = await new ArtifactService({ storage, config, log, fetchImpl, plugins: host }).init()
+  await host.register(plugins ?? (await loadPluginModules(config.plugins?.modules ?? [])), { config, service })
   const auth = new Authenticator({ config, signer: service.signer, log, fetchImpl })
   const publicOrigin = new URL(config.publicUrl).origin
   const ancestors = config.embed.frameAncestors
@@ -272,7 +279,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     return json(res, 404, { error: 'not_found' })
   }
 
-  async function serveContent(res, { meta, ref, theme, download }) {
+  async function serveContent(res, { meta, ref, theme, download, shared = false }) {
     const { version, n } = service.resolveVersion(meta, ref)
     const content = await service.store.readVersionContent(meta.slug, version)
     if (download === 'markdown') {
@@ -284,6 +291,12 @@ export async function createApp(config, { storage, log = createLogger(config.log
       })
     }
     const page = renderVersion({ html: content.html, markdown: content.markdown, title: meta.title, theme })
+    if (!host.empty) {
+      // Plugins see whether the reader is a member or holds only a link, so they can keep internal details out of shared views.
+      const context = { slug: meta.slug, title: meta.title, version: { n, id: version.id }, shared }
+      page.html = await host.renderWidgets(page.html, { ...context, phase: 'read' })
+      if (host.readHooks.length) page.html = await host.runReadHooks({ html: page.html }, { ...context, artifact: service.present(meta) })
+    }
     const headers = { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': contentCsp(), 'cache-control': 'no-store', 'x-artifact-version': String(n) }
     if (download === 'html') headers['content-disposition'] = `attachment; filename="${meta.slug}-v${n}.html"`
     send(res, 200, page.html, headers)
@@ -300,6 +313,46 @@ export async function createApp(config, { storage, log = createLogger(config.log
       send(res, 200, body, headers)
     } catch {
       send(res, 404, 'not found', { 'content-type': 'text/plain' })
+    }
+  }
+
+  /** A plugin route: auth as declared, then the handler with a small toolkit. */
+  async function runPluginRoute(req, res, url, principal, { route, params }) {
+    const refuse = (status, error, hint) => json(res, status, { error, hint }, status === 401 ? { 'www-authenticate': 'Bearer' } : {})
+    if (route.auth === 'read' && !canRead(principal)) {
+      if (wantsHtml(req) && principal.via !== 'bearer' && !url.pathname.startsWith('/api/')) return deny(req, res, principal, url)
+      return refuse(401, 'unauthorized', 'send Authorization: Bearer <token>')
+    }
+    if (route.auth === 'write' || route.auth === 'share') {
+      const allowed = route.auth === 'write' ? canWrite(principal) : canShare(principal)
+      if (!allowed) return principal.role === 'none' ? refuse(401, 'unauthorized', 'send Authorization: Bearer <token>') : refuse(403, 'forbidden', 'this token or account may not do this')
+      checkSameOrigin(req, principal)
+    }
+    const ctx = Object.freeze({
+      req,
+      res,
+      url,
+      method: route.method,
+      params,
+      query: url.searchParams,
+      principal: Object.freeze({ name: principal.name ?? null, email: principal.email ?? null, role: principal.role, via: principal.via }),
+      artifacts: host.artifacts,
+      readJson: (limit = 1024 * 1024) => readJson(req, limit),
+      readBody: (limit = 1024 * 1024) => readBody(req, limit),
+      json: (status, body, headers) => json(res, status, body, headers),
+      html: (status, body, headers = {}) => html(res, status, body, { headers }),
+      send: (status, body, headers) => send(res, status, body, headers),
+      redirect: (location, headers) => redirect(res, location, headers),
+    })
+    try {
+      const result = await route.handler(ctx)
+      if (res.headersSent || res.writableEnded) return
+      if (result === undefined) return send(res, 204, '')
+      return json(res, 200, result)
+    } catch (error) {
+      if (isApiErrorLike(error)) return json(res, error.status, { error: error.code, ...(error.hint ? { hint: error.hint } : {}), ...(error.problems ? { problems: error.problems } : {}) })
+      log('error', 'plugin route failed', { plugin: route.plugin, route: `${route.method} ${route.path}`, error: error.message, stack: error.stack })
+      return json(res, 500, { error: 'plugin_error', hint: `plugin "${route.plugin}" failed; see the server log` })
     }
   }
 
@@ -344,7 +397,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     if (sharedMatch && method === 'GET') {
       const meta = await service.resolveLinkToken(sharedMatch[1])
       if (!meta) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Link not available', message: 'This link has expired or was revoked, or it never existed.', principal: ANONYMOUS }))
-      if (sharedMatch[2]) return serveContent(res, { meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download') })
+      if (sharedMatch[2]) return serveContent(res, { meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download'), shared: true })
       const { n } = service.resolveVersion(meta, url.searchParams.get('v'))
       const artifact = presentFull(meta)
       const theme = url.searchParams.get('theme')
@@ -358,6 +411,12 @@ export async function createApp(config, { storage, log = createLogger(config.log
     } catch (error) {
       if (error.status === 401) return json(res, 401, { error: 'unauthorized', hint: 'the bearer token is not valid' }, { 'www-authenticate': 'Bearer' })
       throw error
+    }
+
+    // ---- plugin routes (their own namespaces, see docs/plugins.md) ------------
+    if (host.routes.length) {
+      const matched = host.matchRoute(method, path)
+      if (matched) return runPluginRoute(req, res, url, principal, matched)
     }
 
     // ---- sign-in -------------------------------------------------------------
@@ -513,7 +572,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       const legacyKey = url.searchParams.get('k')
       // Links of the previous system (`/a/<slug>?k=<key>`) keep working while the document stays shared.
       if (kind === 'a' && legacyKey && found && (sub === undefined || sub === '/raw') && service.legacyKeyMatches(found.meta, legacyKey)) {
-        if (sub === '/raw') return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download') })
+        if (sub === '/raw') return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download'), shared: true })
         const { n } = service.resolveVersion(found.meta, url.searchParams.get('v'))
         const rawUrl = `/a/${slug}/raw?v=${n}&k=${encodeURIComponent(legacyKey)}`
         return html(res, 200, readerPage({ siteName: config.siteName, principal: ANONYMOUS, artifact: presentFull(found.meta), n, rawUrl, canEdit: false, shareToken: '', mode: 'shared' }))
@@ -568,6 +627,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
       await handle(req, res)
     } catch (error) {
       if (error instanceof ApiError) return json(res, error.status, error.toJSON())
+      // The same shape from a plugin package that bundles its own copy of this module.
+      if (isApiErrorLike(error)) return json(res, error.status, { error: error.code, ...(error.hint ? { hint: error.hint } : {}), ...(error.problems ? { problems: error.problems } : {}) })
       if (error instanceof HttpError) return json(res, error.status, { error: 'request_error', hint: error.message })
       log('error', 'request failed', { path: redactPath(req.url), error: error.message, stack: error.stack })
       if (wantsHtml(req)) return html(res, 503, errorPage({ siteName: config.siteName, status: 503, title: 'Temporarily unavailable', message: 'The storage did not answer. The document is safe; try again in a minute.', principal: ANONYMOUS }))
@@ -577,7 +638,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
   server.headersTimeout = 30_000
   server.requestTimeout = 120_000
 
-  return { server, service, auth }
+  return { server, service, auth, plugins: host }
 }
 
 /** Only same-site relative paths survive as a post-login destination. */

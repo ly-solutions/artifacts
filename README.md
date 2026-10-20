@@ -122,6 +122,13 @@ One command for people, agents and operators. It reads `ARTIFACTS_URL` and `ARTI
 Local images in a page (`<img src="./chart.png">`, `![](chart.png)`) are embedded on publish, so documents are
 self-contained. `ARTIFACTS_SESSION`, when set by an agent workspace, links every publish to its conversation.
 
+## Extending it
+
+Plugins add what only your team needs without a fork: widgets that turn
+`<artifact-widget type="ticket" ref="PROJ-12">` into a chip at publish or read time, extra routes, checks on what
+is published, and listeners for changes. Point `ARTIFACTS_PLUGINS` at a module; see [docs/plugins.md](docs/plugins.md)
+and the [example](examples/plugins/github-issue/index.mjs).
+
 ## Ways to run it
 
 | | Command | Details |
