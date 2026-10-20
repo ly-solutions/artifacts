@@ -476,6 +476,21 @@ export async function createApp(config, { storage, log = createLogger(config.log
         const rawUrl = `/a/${slug}/raw?v=${n}&k=${encodeURIComponent(legacyKey)}`
         return html(res, 200, readerPage({ siteName: config.siteName, principal: ANONYMOUS, artifact: presentFull(found.meta), n, rawUrl, canEdit: false, shareToken: '', mode: 'shared' }))
       }
+      // An external reader owns the document page: browsers (not API clients, which send a bearer token or
+      // do not ask for HTML) go there. Signed-in people stay here unless ARTIFACTS_READER_REDIRECT=browsers.
+      if (kind === 'a' && !sub && config.reader.url && wantsHtml(req) && principal.via !== 'bearer' && (config.reader.redirect === 'browsers' || !canRead(principal))) {
+        const ref = url.searchParams.get('v')
+        let target = { version: ref ?? '', n: '' }
+        if (ref && found) {
+          try {
+            const resolved = service.resolveVersion(found.meta, ref)
+            target = { version: resolved.version.id, n: resolved.n }
+          } catch {
+            /* an unknown version is the reader's to report */
+          }
+        }
+        return redirect(res, service.readerUrl(slug, target))
+      }
       if (!canRead(principal)) {
         if (sub === '/raw' || sub === '/versions' || sub === '/diff' || !wantsHtml(req)) return json(res, 401, { error: 'unauthorized' })
         return deny(req, res, principal, url)

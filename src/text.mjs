@@ -113,6 +113,29 @@ export function markdownToText(markdown) {
     .trim()
 }
 
+/**
+ * Fills `{name}` placeholders of a URL template with URL-encoded values. A query
+ * parameter whose value is made only of placeholders that resolved to nothing
+ * is dropped, so `…/{slug}?v={version}` gives `…/doc` rather than `…/doc?v=`.
+ */
+export function fillUrlTemplate(template, values = {}) {
+  const sub = (text) => text.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent(values[name] ?? ''))
+  const hashAt = template.indexOf('#')
+  const hash = hashAt === -1 ? '' : sub(template.slice(hashAt))
+  const rest = hashAt === -1 ? template : template.slice(0, hashAt)
+  const queryAt = rest.indexOf('?')
+  if (queryAt === -1) return `${sub(rest)}${hash}`
+  const pairs = rest
+    .slice(queryAt + 1)
+    .split('&')
+    .filter((pair) => {
+      const value = pair.slice(pair.indexOf('=') + 1)
+      return !(pair.includes('=') && /\{\w+\}/.test(value) && sub(value) === '')
+    })
+    .map(sub)
+  return `${sub(rest.slice(0, queryAt))}${pairs.length ? `?${pairs.join('&')}` : ''}${hash}`
+}
+
 export const escapeHtml = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
 

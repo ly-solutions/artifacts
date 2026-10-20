@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
 - List pagination you can follow: `GET /api/v1/artifacts` answers with `offset`, `limit` and `nextOffset`
   (`null` on the last page) plus a `Link: rel="next"` header; the catalog page pages by 200 with Newer/Older
   links instead of silently showing only the first 200; `artifacts find` takes `--offset` and `--all`.
+- `ARTIFACTS_READER_URL` (with `ARTIFACTS_READER_REDIRECT`): hand the document page to an external reader.
+  `viewUrl` points there, and `GET /a/{slug}` from browsers without a session (or all browsers) answers `302`
+  to the template, with `{slug}`, `{version}` (resolved id) and `{n}`. Off by default.
 - Version diff: `GET /api/v1/artifacts/{slug}/diff?from=&to=` (JSON line blocks or a unified patch), comparing
   the Markdown sources or the visible text; `GET /a/{slug}/diff` in the earlier service's shape;
   `artifacts diff SLUG [FROM] [TO]`.

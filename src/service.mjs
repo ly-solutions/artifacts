@@ -9,7 +9,7 @@ import { diffTexts } from './diff.mjs'
 import { Signer, safeEqual } from './signing.mjs'
 import { ConflictError } from './storage/index.mjs'
 import { ArtifactStore, SCHEMA, VersionExistsError, contentVersionId, isValidVersionId, newVersionId } from './store.mjs'
-import { htmlToText, isValidSlug, makeSlug, normalizeTags, titleFromHtml, titleFromMarkdown } from './text.mjs'
+import { fillUrlTemplate, htmlToText, isValidSlug, makeSlug, normalizeTags, titleFromHtml, titleFromMarkdown } from './text.mjs'
 
 export class ApiError extends Error {
   constructor(status, code, { problems, hint, extra } = {}) {
@@ -62,8 +62,15 @@ export class ArtifactService {
 
   // ---- links -----------------------------------------------------------------
 
+  /** Where people read a document: the external reader when ARTIFACTS_READER_URL is set, this server otherwise. */
   viewUrl(slug) {
-    return `${this.config.publicUrl}/a/${slug}`
+    return this.readerUrl(slug) ?? `${this.config.publicUrl}/a/${slug}`
+  }
+
+  /** The ARTIFACTS_READER_URL template filled for a document (and a version), or null when no reader is configured. */
+  readerUrl(slug, { version = '', n = '' } = {}) {
+    const template = this.config.reader?.url
+    return template ? fillUrlTemplate(template, { slug, version, n: String(n) }) : null
   }
 
   embedUrl(slug) {

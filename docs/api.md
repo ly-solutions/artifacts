@@ -51,6 +51,7 @@ Errors share one shape, written so an agent can fix the request instead of retry
 }
 ```
 
+`viewUrl` is this server's reader, or the external reader when `ARTIFACTS_READER_URL` is set.
 `taskUrl` and `sessionUrl` are filled from `ARTIFACTS_TASK_URL` and `ARTIFACTS_SESSION_URL`; `public` is true
 while share links work. Single-artifact answers also carry `versions`, newest first.
 
@@ -200,7 +201,7 @@ Turns sharing off; every link issued before stops working, including ones not ye
 | Path | What |
 |---|---|
 | `/` | Catalog with search and tag filters. `?q=`, `?tag=`, `?offset=` (200 per page). |
-| `/a/{slug}` | Reader: metadata, version picker, share and edit dialogs, download. `?v=` picks a version. |
+| `/a/{slug}` | Reader: metadata, version picker, share and edit dialogs, download. `?v=` picks a version. With `ARTIFACTS_READER_URL`, browsers without a session (or all browsers) get `302` to the external reader instead. |
 | `/embed/{slug}` | Reader without the catalog chrome, for framing in another app (`ARTIFACTS_FRAME_ANCESTORS`). Posts `{type: "artifacts:ready", slug, version}` to the parent. |
 | `/a/{slug}/raw` | The rendered document alone, sandboxed. `?v=`, `?theme=light\|dark`, `?download=html\|markdown`. |
 | `/s/{token}` | Shared, read-only reader; `/s/{token}/raw` the document. Refusals are indistinguishable 404s. |

@@ -93,6 +93,10 @@ export function loadConfig(env = process.env) {
       taskUrl: env.ARTIFACTS_TASK_URL || '',
       sessionUrl: env.ARTIFACTS_SESSION_URL || '',
     },
+    reader: {
+      url: env.ARTIFACTS_READER_URL || '',
+      redirect: (env.ARTIFACTS_READER_REDIRECT || 'anonymous').toLowerCase(),
+    },
     embed: {
       frameAncestors: list(env.ARTIFACTS_FRAME_ANCESTORS),
       corsOrigins: list(env.ARTIFACTS_CORS_ORIGINS),
@@ -159,6 +163,11 @@ export function validateConfig(config) {
   for (const [name, template] of [['ARTIFACTS_TASK_URL', config.links.taskUrl], ['ARTIFACTS_SESSION_URL', config.links.sessionUrl]]) {
     if (template && !/^https?:\/\//.test(template)) errors.push(`${name} must be an http(s) URL template, e.g. https://tracker.example.com/issue/{task}`)
   }
+  if (config.reader.url) {
+    if (!/^https?:\/\//.test(config.reader.url)) errors.push('ARTIFACTS_READER_URL must be an http(s) URL template, e.g. https://reader.example.com/docs/{slug}?v={version}')
+    else if (!config.reader.url.includes('{slug}')) errors.push('ARTIFACTS_READER_URL must contain {slug}')
+  }
+  if (!['anonymous', 'browsers'].includes(config.reader.redirect)) errors.push(`ARTIFACTS_READER_REDIRECT must be anonymous or browsers, got "${config.reader.redirect}"`)
   for (const [name, sources] of [['ARTIFACTS_CONTENT_SCRIPT_SRC', config.content.scriptSrc], ['ARTIFACTS_CONTENT_CONNECT_SRC', config.content.connectSrc], ['ARTIFACTS_CONTENT_FRAME_SRC', config.content.frameSrc]]) {
     // One CSP source per entry: a semicolon or a space would smuggle extra directives into the policy.
     const bad = sources.filter((source) => !/^[^\s;,"]+$/.test(source))

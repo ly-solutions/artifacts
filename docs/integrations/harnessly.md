@@ -123,6 +123,19 @@ The pane uses the person's artifacts session (a cookie on the artifacts host). P
 Changes from the pane (share, metadata) are only possible from artifacts' own pages, which check `Origin`; the
 embed view itself is read-only.
 
+### Reading in harnessly instead of artifacts
+
+If harnessly has its own document page (with comments, say), make it the place every link opens:
+
+```bash
+ARTIFACTS_READER_URL=https://harnessly.example.com/docs/{slug}?v={version}
+```
+
+`viewUrl` in API answers and webhooks then points at harnessly, and old `/a/{slug}` links pasted in chats and
+trackers redirect there (`302`) for anyone without an artifacts session. harnessly's page reads the document
+server-side (`GET /a/{slug}/raw?v=…` or `/api/v1/artifacts/{slug}/content` with a viewer token) and can show
+changes with `GET /api/v1/artifacts/{slug}/diff`.
+
 ## 4. Live updates
 
 Point artifacts' webhook at harnessly:

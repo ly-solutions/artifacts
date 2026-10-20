@@ -91,6 +91,8 @@ spec:
             {{- end }}
             - { name: ARTIFACTS_TASK_URL, value: {{ .Values.links.taskUrl | quote }} }
             - { name: ARTIFACTS_SESSION_URL, value: {{ .Values.links.sessionUrl | quote }} }
+            - { name: ARTIFACTS_READER_URL, value: {{ .Values.reader.url | quote }} }
+            - { name: ARTIFACTS_READER_REDIRECT, value: {{ .Values.reader.redirect | quote }} }
             - { name: ARTIFACTS_FRAME_ANCESTORS, value: {{ .Values.embed.frameAncestors | quote }} }
             - { name: ARTIFACTS_CORS_ORIGINS, value: {{ .Values.embed.corsOrigins | quote }} }
             - { name: ARTIFACTS_CONTENT_SCRIPT_SRC, value: {{ .Values.content.scriptSrc | quote }} }

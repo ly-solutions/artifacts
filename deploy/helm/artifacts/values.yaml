@@ -121,6 +121,12 @@ embed:
   # -- Origins allowed to call the API from a browser (comma-separated).
   corsOrigins: ""
 
+reader:
+  # -- External reader template, e.g. https://reader.example.com/docs/{slug}?v={version} (empty = this server).
+  url: ""
+  # -- Who is redirected to it: anonymous or browsers.
+  redirect: anonymous
+
 versions:
   # -- Format of new version ids: timestamp or sha (40 hex characters).
   idFormat: timestamp

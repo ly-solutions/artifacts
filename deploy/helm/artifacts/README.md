@@ -99,6 +99,8 @@ and OIDC with workload identity (IRSA) instead of static S3 keys.
 | `embed.corsOrigins` | `""` | Origins allowed to call the API from a browser (comma-separated). |
 | `content.scriptSrc` | `"https://cdnjs.cloudflare.com,https://cdn.jsdelivr.net"` | Script origins published documents may load. |
 | `content.connectSrc` | `""` | Origins published documents may fetch from (empty = none). |
+| `reader.url` | `""` | External reader template, e.g. `https://reader.example.com/docs/{slug}?v={version}` (empty = this server). |
+| `reader.redirect` | `anonymous` | Who is redirected to it: `anonymous` or `browsers`. |
 | `versions.idFormat` | `timestamp` | Format of new version ids: `timestamp` or `sha` (40 hex characters). |
 | `content.frameSrc` | `""` | Origins published documents may frame, e.g. a whiteboard service (empty = none). |
 | `share.ttl` | `""` | Default share link lifetime when a request sets none (empty = no expiry). |
