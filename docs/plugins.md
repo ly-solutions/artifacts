@@ -197,3 +197,31 @@ FROM ghcr.io/ly-solutions/artifacts:<version>
 COPY --chown=node:node acme-plugin /app/node_modules/@acme/artifacts-plugin
 ENV ARTIFACTS_PLUGINS=@acme/artifacts-plugin
 ```
+
+A plugin package that depends on `@ly-solutions/artifacts` (for its tests, or for helpers) imports only from the
+public entry points listed in the README's [Embedding](../README.md#embedding-and-plugin-packages) section, never
+from files under `src/`, which the package does not export:
+
+```js
+import { definePlugin, escapeHtml } from '@ly-solutions/artifacts/plugin'
+
+export default definePlugin((api) => {
+  api.addWidget('ticket', ({ ref }) => `<span class="artifact-chip">${escapeHtml(ref)}</span>`)
+})
+```
+
+## Testing a plugin
+
+Start the app in-process with the plugin and drive it over HTTP:
+
+```js
+import { createApp, loadConfig, FsStorage } from '@ly-solutions/artifacts'
+import * as plugin from './index.mjs'
+
+const config = loadConfig({ ARTIFACTS_STORAGE: 'fs', ARTIFACTS_AUTH: 'none' })
+const { server } = await createApp(config, { storage: new FsStorage({ dir: tmpDir }), plugins: [plugin] })
+server.listen(0)
+```
+
+`plugins` takes plugin modules (or `{name, register}` objects) directly, instead of `ARTIFACTS_PLUGINS`. The
+server's own tests do this with the example plugin (`test/plugins.test.mjs`).

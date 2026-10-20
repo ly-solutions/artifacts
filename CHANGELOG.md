@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format follows
   publishes, transform served pages and listen to change events. Documented in `docs/plugins.md`, with an example
   issue-chip plugin in `examples/plugins/github-issue`. `ARTIFACTS_WIDGET_TIMEOUT` bounds one widget render.
 - Wrapped documents style `<a class="artifact-chip">` as an inline chip.
+- Package entry points (`exports`): `@ly-solutions/artifacts` (server, config, service, storage, plugin host, diff
+  and text helpers), `@ly-solutions/artifacts/plugin` (helpers for plugin packages, `definePlugin`),
+  `@ly-solutions/artifacts/diff` and `@ly-solutions/artifacts/text`.
 - `GET|PUT /api/v1/artifacts/{slug}/access` (and `/a/{slug}/access`): whether the caller may read, write or
   share a document, with a short-lived read link (`ARTIFACTS_READ_LINK_TTL`, default 15m) for anyone who may
   read, including someone who holds only a share link (`X-Artifacts-Share`). `PUT {"public": bool}` turns
@@ -33,6 +36,11 @@ All notable changes to this project are documented here. The format follows
   the API; `409 version_exists` for an id the artifact already has.
 - `ARTIFACTS_CONTENT_FRAME_SRC`: origins published documents may frame (a whiteboard, a video), instead of the
   fixed `frame-src 'none'`. Content source lists are checked at start for entries that would break the policy.
+
+### Changed
+
+- Files under `src/` can no longer be imported from outside the package; use the entry points above. The
+  `artifacts` command is unchanged.
 
 ### Fixed
 

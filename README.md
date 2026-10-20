@@ -129,6 +129,25 @@ Plugins add what only your team needs without a fork: widgets that turn
 is published, and listeners for changes. Point `ARTIFACTS_PLUGINS` at a module; see [docs/plugins.md](docs/plugins.md)
 and the [example](examples/plugins/github-issue/index.mjs).
 
+## Embedding and plugin packages
+
+The npm package has public entry points; files under `src/` are internal and not importable.
+
+| Import | What |
+|---|---|
+| `@ly-solutions/artifacts` | `createApp`, `loadConfig`, `validateConfig`, `ArtifactService`, `ApiError`, `FsStorage`, `S3Storage`, `createStorage`, the plugin loader and host, diff and text helpers |
+| `@ly-solutions/artifacts/plugin` | helpers for plugin packages: `definePlugin`, `ApiError`, `escapeHtml`, `parseAttributes`, `PLUGIN_API_VERSION`, `EVENTS` |
+| `@ly-solutions/artifacts/diff` | `diffLines`, `diffTexts`, `unifiedDiff` |
+| `@ly-solutions/artifacts/text` | `escapeHtml`, `htmlToText`, `markdownToText`, `fillUrlTemplate`, slug and tag helpers |
+
+```js
+import { createApp, loadConfig, FsStorage } from '@ly-solutions/artifacts'
+
+const config = loadConfig({ ...process.env, ARTIFACTS_STORAGE: 'fs' })
+const { server } = await createApp(config, { storage: new FsStorage({ dir: './data' }), plugins: [myPlugin] })
+server.listen(config.port)
+```
+
 ## Ways to run it
 
 | | Command | Details |

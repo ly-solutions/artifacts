@@ -4,6 +4,14 @@
   "description": "A catalog for documents that people and coding agents publish: versioned HTML and Markdown pages with search, a reader and revocable share links. S3 or filesystem storage.",
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./plugin": "./src/plugin-api.mjs",
+    "./diff": "./src/diff.mjs",
+    "./text": "./src/text.mjs",
+    "./package.json": "./package.json"
+  },
   "homepage": "https://github.com/ly-solutions/artifacts",
   "repository": {
     "type": "git",
