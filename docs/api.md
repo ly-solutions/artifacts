@@ -169,7 +169,8 @@ Turns sharing off; every link issued before stops working, including ones not ye
 
 Documents served by `/raw` carry `Content-Security-Policy: sandbox allow-scripts allow-popups …` without
 `allow-same-origin`: their scripts run in an opaque origin, cannot read cookies or call the API, and cannot
-fetch anywhere unless `ARTIFACTS_CONTENT_CONNECT_SRC` allows it. A framed reader page can switch the theme of a
+fetch anywhere unless `ARTIFACTS_CONTENT_CONNECT_SRC` allows it, nor frame anything unless
+`ARTIFACTS_CONTENT_FRAME_SRC` allows it. A framed reader page can switch the theme of a
 wrapped document with `postMessage({type: "artifacts:theme", theme: "light" | "dark" | "auto"}, "*")`.
 
 ## Webhooks

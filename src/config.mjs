@@ -99,6 +99,7 @@ export function loadConfig(env = process.env) {
     content: {
       scriptSrc: list(env.ARTIFACTS_CONTENT_SCRIPT_SRC ?? 'https://cdnjs.cloudflare.com,https://cdn.jsdelivr.net'),
       connectSrc: list(env.ARTIFACTS_CONTENT_CONNECT_SRC),
+      frameSrc: list(env.ARTIFACTS_CONTENT_FRAME_SRC),
       maxBytes: int(env.ARTIFACTS_MAX_DOCUMENT_BYTES, 8 * 1024 * 1024, 'ARTIFACTS_MAX_DOCUMENT_BYTES'),
     },
     share: {
@@ -152,6 +153,11 @@ export function validateConfig(config) {
   }
   for (const [name, template] of [['ARTIFACTS_TASK_URL', config.links.taskUrl], ['ARTIFACTS_SESSION_URL', config.links.sessionUrl]]) {
     if (template && !/^https?:\/\//.test(template)) errors.push(`${name} must be an http(s) URL template, e.g. https://tracker.example.com/issue/{task}`)
+  }
+  for (const [name, sources] of [['ARTIFACTS_CONTENT_SCRIPT_SRC', config.content.scriptSrc], ['ARTIFACTS_CONTENT_CONNECT_SRC', config.content.connectSrc], ['ARTIFACTS_CONTENT_FRAME_SRC', config.content.frameSrc]]) {
+    // One CSP source per entry: a semicolon or a space would smuggle extra directives into the policy.
+    const bad = sources.filter((source) => !/^[^\s;,"]+$/.test(source))
+    if (bad.length) errors.push(`${name}: each entry must be one CSP source such as https://boards.example.com, got ${bad.map((b) => JSON.stringify(b)).join(', ')}`)
   }
   if (!/^https?:\/\//.test(config.publicUrl)) errors.push('ARTIFACTS_PUBLIC_URL must start with http:// or https://')
   return { errors, warnings }

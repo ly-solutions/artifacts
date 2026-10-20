@@ -126,6 +126,8 @@ content:
   scriptSrc: https://cdnjs.cloudflare.com,https://cdn.jsdelivr.net
   # -- Origins published documents may fetch from (empty = none).
   connectSrc: ""
+  # -- Origins published documents may frame, e.g. a whiteboard service (empty = none).
+  frameSrc: ""
 
 share:
   # -- Default share link lifetime when a request sets none (empty = no expiry).

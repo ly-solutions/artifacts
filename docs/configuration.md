@@ -94,11 +94,14 @@ Share links work in every mode: they are signed with `ARTIFACTS_SECRET` and open
 
 Published HTML is untrusted. It is served with `Content-Security-Policy: sandbox …` without
 `allow-same-origin`, so a document's scripts get a unique origin and cannot read cookies or call the API.
+Each list entry is one CSP source (an origin, an origin with a path, or a keyword such as `'self'`); entries
+with spaces or semicolons are refused at start.
 
 | Variable | Default | Description |
 |---|---|---|
 | `ARTIFACTS_CONTENT_SCRIPT_SRC` | `https://cdnjs.cloudflare.com,https://cdn.jsdelivr.net` | Script origins documents may load (charts, diagram libraries). Inline scripts are always allowed inside the sandbox. |
 | `ARTIFACTS_CONTENT_CONNECT_SRC` | empty (`'none'`) | Origins documents may fetch from. Keep it empty unless a document must call an API without cookie authentication. |
+| `ARTIFACTS_CONTENT_FRAME_SRC` | empty (`'none'`) | Origins documents may embed in an `<iframe>`, e.g. `https://boards.example.com` for whiteboards or `https://www.youtube-nocookie.com` for videos. A path narrows it (`https://tools.example.com/embed/`). The framed page still decides with its own `frame-ancestors` whether it agrees to be embedded. |
 
 ## Client (CLI)
 

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, it } from 'node:test'
 
+import { validateConfig } from '../src/config.mjs'
 import { redactPath } from '../src/server.mjs'
-import { READ_TOKEN, TOKEN, startApp } from './helpers/setup.mjs'
+import { READ_TOKEN, TOKEN, startApp, testConfig } from './helpers/setup.mjs'
 
 describe('HTTP API (token auth)', () => {
   let app
@@ -46,6 +47,7 @@ describe('HTTP API (token auth)', () => {
     assert.doesNotMatch(csp, /allow-same-origin/)
     assert.match(csp, /frame-ancestors 'self' https:\/\/workspace\.example\.com/)
     assert.match(csp, /connect-src 'none'/)
+    assert.match(csp, /frame-src 'none'/)
 
     const shared = await app.request('POST', `/api/v1/artifacts/${slug}/share`, { body: { expiresIn: '7d' } })
     assert.equal(shared.status, 200)
@@ -168,6 +170,27 @@ describe('HTTP API (token auth)', () => {
   it('redacts share tokens from logged paths', () => {
     assert.equal(redactPath('/s/abc.def/raw?v=1'), '/s/***/raw')
     assert.equal(redactPath('/a/x/raw?k=secret'), '/a/x/raw')
+  })
+})
+
+describe('content policy', () => {
+  it('lets documents frame the origins in ARTIFACTS_CONTENT_FRAME_SRC', async () => {
+    const app = await startApp({ ARTIFACTS_CONTENT_FRAME_SRC: 'https://boards.example.com, https://video.example.com/embed/' })
+    try {
+      await app.request('POST', '/api/v1/artifacts', { body: { title: 'With a board', slug: 'with-a-board', html: '<iframe src="https://boards.example.com/b/x"></iframe>' } })
+      const raw = await app.request('GET', '/a/with-a-board/raw', { raw: true })
+      const csp = raw.headers.get('content-security-policy')
+      assert.match(csp, /frame-src https:\/\/boards\.example\.com https:\/\/video\.example\.com\/embed\/;/)
+      assert.match(csp, /^sandbox allow-scripts/, 'the document stays sandboxed')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('refuses a source that would inject a directive', () => {
+    const { errors } = validateConfig(testConfig({ ARTIFACTS_CONTENT_FRAME_SRC: "https://ok.example.com,https://x.example.com; script-src *" }))
+    assert.ok(errors.some((e) => e.startsWith('ARTIFACTS_CONTENT_FRAME_SRC')))
+    assert.deepEqual(validateConfig(testConfig({ ARTIFACTS_CONTENT_FRAME_SRC: "'self',https://ok.example.com/path/" })).errors, [])
   })
 })
 

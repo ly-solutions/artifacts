@@ -97,7 +97,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       `font-src ${publicOrigin} data: https://fonts.gstatic.com`,
       `script-src 'unsafe-inline' 'unsafe-eval' ${config.content.scriptSrc.join(' ')}`.trim(),
       `connect-src ${config.content.connectSrc.length ? config.content.connectSrc.join(' ') : "'none'"}`,
-      "frame-src 'none'",
+      `frame-src ${config.content.frameSrc.length ? config.content.frameSrc.join(' ') : "'none'"}`,
       "form-action 'none'",
       `frame-ancestors 'self' ${ancestors.join(' ')}`.trim(),
     ].join('; ')
