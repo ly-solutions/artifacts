@@ -143,6 +143,35 @@ Query: `v` (version number, version id or an unambiguous id prefix of 7+ charact
 `format` = `html` (the published source, as `text/plain`), `markdown` (`text/markdown`) or `json`
 (`{ slug, version, html, markdown }`). The `X-Artifact-Version` header carries the version number.
 
+### `GET /api/v1/artifacts/{slug}/diff` — what changed between versions
+
+Query: `from`, `to` (version number, id or id prefix; `to` defaults to the latest version, `from` to the one
+before `to`), `source`, `format` = `json` (default) or `unified`, `context` (unchanged lines around each change in
+the unified format, default 3).
+
+`source` picks what is compared: `markdown` (the Markdown sources; `404 no_markdown` if a version has none),
+`text` (the visible text of each page, HTML tags stripped, one block per line; a Markdown-only version as
+written), or `auto` (default: Markdown when both versions have it, text otherwise). Styling and script changes
+do not show up in `text`.
+
+```json
+{
+  "slug": "api-rate-limits-proposal-4k2m9x",
+  "from": { "n": 2, "id": "20261019T201231Z-1f0e2d" },
+  "to": { "n": 3, "id": "20261019T201232Z-9c41ab" },
+  "source": "markdown",
+  "approximate": false,
+  "stats": { "added": 1, "removed": 1, "same": 41 },
+  "blocks": [ { "kind": "same", "text": "# API rate limits" }, { "kind": "removed", "text": "Burst: 20" }, { "kind": "added", "text": "Burst: 40" } ]
+}
+```
+
+`blocks` lists every line of both versions in order (`same`, `removed`, `added`), so a client can show the whole
+document with changes marked or keep only the changes. The diff is a minimal line diff (Myers). When more than
+2000 lines differ it is `approximate`: the changed region comes back as one removed and one added run.
+`format=unified` returns a `diff -u` style patch as `text/plain` (empty when nothing changed) with the
+`X-Diff-Source` header, and `X-Diff-Approximate: true` when approximate.
+
 ### `POST /api/v1/artifacts/{slug}/share`
 
 Body (optional): `{ "expiresIn": "7d", "rotate": false }`. Turns sharing on and returns a signed link:
@@ -205,5 +234,6 @@ Clients of the earlier internal service keep working:
 |---|---|
 | `POST /a` | Same body as `POST /api/v1/artifacts`; `rotateKey: true` revokes the share links of a shared artifact. Answers `{slug, public, viewUrl, publicUrl?, version, versionInfo: {n, sha}, created}`. |
 | `PATCH /a/{slug}` | Same body as the metadata `PATCH`. Answers `{ok, slug, title, description, task, tags, public, viewUrl, publicUrl?}`. |
+| `GET /a/{slug}/diff?from=&to=` | `{from, to, fromVersion, toVersion, source, approximate, stats, blocks}` with version ids in `from`/`to`; same reading rights and parameters as `/api/v1/artifacts/{slug}/diff`. |
 | `GET /a/{slug}/versions` | `{versions: [{n, id, sha, createdAt, author, note, current, …}]}`. `sha` repeats `id`; it is a git sha only for imported versions or with `ARTIFACTS_VERSION_ID=sha`. |
 | `GET /a/{slug}?k=<key>` | Old share links of imported documents, while the document stays shared. |

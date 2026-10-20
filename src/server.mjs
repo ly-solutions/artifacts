@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canWrite, parseCookies } from './auth/index.mjs'
 import { parseDuration } from './config.mjs'
+import { unifiedDiff } from './diff.mjs'
 import { renderVersion } from './render/doc.mjs'
 import { catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
 import { ApiError, ArtifactService } from './service.mjs'
@@ -214,6 +215,19 @@ export async function createApp(config, { storage, log = createLogger(config.log
     send(res, 200, content.html, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-artifact-version': String(content.n) })
   }
 
+  async function apiDiff(res, url, slug) {
+    const params = url.searchParams
+    const format = params.get('format') ?? 'json'
+    if (!['json', 'unified'].includes(format)) throw new ApiError(400, 'invalid', { problems: ['format: json or unified'] })
+    const context = Math.min(Math.max(Math.floor(Number(params.get('context') ?? 3)) || 0, 0), 100)
+    const diff = await service.diff(slug, { from: params.get('from'), to: params.get('to'), source: params.get('source') ?? 'auto' })
+    if (format === 'unified') {
+      const text = unifiedDiff(diff.blocks, { fromLabel: `${slug}@v${diff.from.n} (${diff.from.id})`, toLabel: `${slug}@v${diff.to.n} (${diff.to.id})`, context })
+      return send(res, 200, text, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-diff-source': diff.source, ...(diff.approximate ? { 'x-diff-approximate': 'true' } : {}) })
+    }
+    json(res, 200, diff)
+  }
+
   async function apiShare(req, res, slug) {
     const body = req.headers['content-length'] === '0' ? {} : await readJson(req, 16 * 1024).catch((error) => (error.code === 'unsupported_media_type' ? {} : Promise.reject(error)))
     let ttl
@@ -395,6 +409,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
           return json(res, 200, { slug, versions: service.versionsOf(meta) })
         }
         if (sub === '/content' && method === 'GET') return needRead(), apiContent(req, res, url, slug)
+        if (sub === '/diff' && method === 'GET') return needRead(), apiDiff(res, url, slug)
         if (sub === '/share' && method === 'POST') return needWrite(), apiShare(req, res, slug)
         if (sub === '/share' && method === 'DELETE') {
           needWrite()
@@ -449,23 +464,29 @@ export async function createApp(config, { storage, log = createLogger(config.log
       return html(res, 200, catalogPage({ siteName: config.siteName, principal, q, tags, results, allTags: await service.tags() }))
     }
 
-    const readerMatch = /^\/(a|embed)\/([a-z0-9][a-z0-9-]*)(\/raw|\/versions)?$/.exec(path)
-    if (readerMatch) {
+    const readerMatch = /^\/(a|embed)\/([a-z0-9][a-z0-9-]*)(\/raw|\/versions|\/diff)?$/.exec(path)
+    if (readerMatch && !(readerMatch[1] === 'embed' && readerMatch[3] === '/diff')) {
       const [, kind, slug, sub] = readerMatch
       const found = await service.store.getManifest(slug)
       const legacyKey = url.searchParams.get('k')
       // Links of the previous system (`/a/<slug>?k=<key>`) keep working while the document stays shared.
-      if (kind === 'a' && legacyKey && found && service.legacyKeyMatches(found.meta, legacyKey)) {
+      if (kind === 'a' && legacyKey && found && (sub === undefined || sub === '/raw') && service.legacyKeyMatches(found.meta, legacyKey)) {
         if (sub === '/raw') return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download') })
         const { n } = service.resolveVersion(found.meta, url.searchParams.get('v'))
         const rawUrl = `/a/${slug}/raw?v=${n}&k=${encodeURIComponent(legacyKey)}`
         return html(res, 200, readerPage({ siteName: config.siteName, principal: ANONYMOUS, artifact: presentFull(found.meta), n, rawUrl, canEdit: false, shareToken: '', mode: 'shared' }))
       }
       if (!canRead(principal)) {
-        if (sub === '/raw' || sub === '/versions' || !wantsHtml(req)) return json(res, 401, { error: 'unauthorized' })
+        if (sub === '/raw' || sub === '/versions' || sub === '/diff' || !wantsHtml(req)) return json(res, 401, { error: 'unauthorized' })
         return deny(req, res, principal, url)
       }
+      if (!found && sub === '/diff') return json(res, 404, { error: 'not_found' })
       if (!found) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: `There is no artifact “${slug}”.`, principal }))
+      if (sub === '/diff') {
+        // Shape of the earlier service: version ids as `from`/`to`, one block per line.
+        const diff = await service.diff(slug, { from: url.searchParams.get('from'), to: url.searchParams.get('to'), source: url.searchParams.get('source') ?? 'auto' })
+        return json(res, 200, { from: diff.from.id, to: diff.to.id, fromVersion: diff.from.n, toVersion: diff.to.n, source: diff.source, approximate: diff.approximate, stats: diff.stats, blocks: diff.blocks })
+      }
       if (sub === '/versions') return json(res, 200, { versions: service.versionsOf(found.meta).map((v) => ({ ...v, sha: v.id })) })
       if (sub === '/raw') return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download') })
       const { n } = service.resolveVersion(found.meta, url.searchParams.get('v'))

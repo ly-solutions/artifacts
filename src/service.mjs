@@ -5,10 +5,11 @@
 import { createHash, createHmac } from 'node:crypto'
 
 import { Catalog, contentText } from './catalog.mjs'
+import { diffTexts } from './diff.mjs'
 import { Signer, safeEqual } from './signing.mjs'
 import { ConflictError } from './storage/index.mjs'
 import { ArtifactStore, SCHEMA, VersionExistsError, contentVersionId, isValidVersionId, newVersionId } from './store.mjs'
-import { isValidSlug, makeSlug, normalizeTags, titleFromHtml, titleFromMarkdown } from './text.mjs'
+import { htmlToText, isValidSlug, makeSlug, normalizeTags, titleFromHtml, titleFromMarkdown } from './text.mjs'
 
 export class ApiError extends Error {
   constructor(status, code, { problems, hint, extra } = {}) {
@@ -137,6 +138,31 @@ export class ArtifactService {
     const { version, n } = this.resolveVersion(meta, ref)
     const content = await this.store.readVersionContent(slug, version)
     return { meta, version, n, ...content }
+  }
+
+  /**
+   * Line diff between two versions. `to` defaults to the latest version, `from` to the one before `to`.
+   * source: `markdown` compares the Markdown sources, `text` the visible text of the pages (HTML
+   * stripped, Markdown as written), `auto` the Markdown when both versions have it, the text otherwise.
+   */
+  async diff(slug, { from, to, source = 'auto' } = {}) {
+    if (!['auto', 'markdown', 'text'].includes(source)) throw new ApiError(400, 'invalid', { problems: ['source: auto, markdown or text'] })
+    const { meta } = await this.get(slug)
+    const right = this.resolveVersion(meta, to)
+    const left = from === undefined || from === null || from === '' ? { version: meta.versions[Math.max(0, right.n - 2)], n: Math.max(1, right.n - 1) } : this.resolveVersion(meta, from)
+    const [a, b] = await Promise.all([this.store.readVersionContent(slug, left.version), this.store.readVersionContent(slug, right.version)])
+    const bothMarkdown = a.markdown !== undefined && b.markdown !== undefined
+    if (source === 'markdown' && !bothMarkdown) throw new ApiError(404, 'no_markdown', { hint: 'one of the versions was published without a Markdown source; use source=text' })
+    const kind = source === 'auto' ? (bothMarkdown ? 'markdown' : 'text') : source
+    const textOf = (content) => (kind === 'markdown' ? content.markdown : content.html !== undefined ? htmlToText(content.html) : (content.markdown ?? ''))
+    const result = diffTexts(textOf(a), textOf(b))
+    return {
+      slug,
+      from: { n: left.n, id: left.version.id },
+      to: { n: right.n, id: right.version.id },
+      source: kind,
+      ...result,
+    }
   }
 
   async search(query) {

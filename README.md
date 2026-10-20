@@ -111,6 +111,7 @@ One command for people, agents and operators. It reads `ARTIFACTS_URL` and `ARTI
 | `artifacts publish --file doc.md\|page.html [--title …] [--tags a,b] [--task ID] [--link URL]` | publish a new document |
 | `artifacts publish --slug SLUG --file … --note "what changed"` | publish a new version of an existing one |
 | `artifacts versions SLUG` | version history: number, date, author, note |
+| `artifacts diff SLUG [FROM] [TO]` | what changed between two versions (default: the last two), as a unified diff |
 | `artifacts get SLUG [--v N] [--format html\|markdown]` | read a version |
 | `artifacts meta SLUG [--title …] [--add-tag t] [--task ID \| --no-task] [--link …]` | change metadata, no new version |
 | `artifacts share SLUG [--expires 7d] [--rotate]` / `artifacts unshare SLUG` | open or revoke read-only links |

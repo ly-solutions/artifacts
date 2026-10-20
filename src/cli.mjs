@@ -20,6 +20,7 @@ Client (needs ARTIFACTS_URL and ARTIFACTS_TOKEN):
                     [--task ID] [--link URL] [--session ID] [--author NAME]
                     [--base-version N] [--new] [--share] [--json]
   artifacts versions SLUG [--json]
+  artifacts diff SLUG [FROM] [TO] [--source auto|markdown|text] [--json]
   artifacts get SLUG [--v N] [--format html|markdown] [--out FILE]
   artifacts meta SLUG [--title "…"] [--description "…"] [--tags a,b] [--add-tag t] [--remove-tag t]
                       [--task ID | --no-task] [--link URL | --no-link] [--session ID | --no-session]
@@ -281,6 +282,19 @@ async function cmdVersions(args, request) {
   return 0
 }
 
+async function cmdDiff(args, request) {
+  const slug = slugArg(args)
+  const params = new URLSearchParams({ format: args.json ? 'json' : 'unified' })
+  const from = args._[2] ?? args.from
+  const to = args._[3] ?? args.to
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  if (args.source) params.set('source', args.source)
+  const { text } = await request('GET', `/api/v1/artifacts/${encodeURIComponent(slug)}/diff?${params}`)
+  process.stdout.write(text || (args.json ? '' : 'no differences\n'))
+  return 0
+}
+
 async function cmdGet(args, request) {
   const slug = slugArg(args)
   const format = args.format ?? 'html'
@@ -451,6 +465,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
         return await cmdVersions(args, request)
       case 'get':
         return await cmdGet(args, request)
+      case 'diff':
+        return await cmdDiff(args, request)
       case 'meta':
         return await cmdMeta(args, request)
       case 'share':

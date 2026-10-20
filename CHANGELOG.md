@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
 - List pagination you can follow: `GET /api/v1/artifacts` answers with `offset`, `limit` and `nextOffset`
   (`null` on the last page) plus a `Link: rel="next"` header; the catalog page pages by 200 with Newer/Older
   links instead of silently showing only the first 200; `artifacts find` takes `--offset` and `--all`.
+- Version diff: `GET /api/v1/artifacts/{slug}/diff?from=&to=` (JSON line blocks or a unified patch), comparing
+  the Markdown sources or the visible text; `GET /a/{slug}/diff` in the earlier service's shape;
+  `artifacts diff SLUG [FROM] [TO]`.
 - `ARTIFACTS_VERSION_ID=sha`: new versions get 40-hex ids (SHA-1 over slug, creation time and content hash) for
   clients that expect git-shaped ids; the default stays `timestamp`, and every stored id keeps resolving.
 - Publishing accepts `versionId` to keep an id from another system (e.g. a git sha) when replaying history through
