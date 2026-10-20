@@ -65,6 +65,7 @@ export function loadConfig(env = process.env) {
       mode: (env.ARTIFACTS_AUTH || 'token').toLowerCase(),
       tokens: list(env.ARTIFACTS_TOKEN),
       readTokens: list(env.ARTIFACTS_READ_TOKEN),
+      shareTokens: list(env.ARTIFACTS_SHARE_TOKEN),
       secret: env.ARTIFACTS_SECRET || undefined,
       sessionTtl: parseDuration(env.ARTIFACTS_SESSION_TTL || '12h', 'ARTIFACTS_SESSION_TTL'),
       cookieSameSite: (env.ARTIFACTS_COOKIE_SAMESITE || 'lax').toLowerCase(),
@@ -109,6 +110,7 @@ export function loadConfig(env = process.env) {
     },
     share: {
       defaultTtl: parseDuration(env.ARTIFACTS_SHARE_TTL, 'ARTIFACTS_SHARE_TTL'),
+      readTokenTtl: parseDuration(env.ARTIFACTS_READ_LINK_TTL || '15m', 'ARTIFACTS_READ_LINK_TTL'),
     },
     webhook: {
       url: env.ARTIFACTS_WEBHOOK_URL || '',
@@ -145,9 +147,11 @@ export function validateConfig(config) {
   if (auth.mode === 'token' && auth.tokens.length === 0) {
     errors.push('ARTIFACTS_AUTH=token needs ARTIFACTS_TOKEN (generate one: openssl rand -hex 32); for a throwaway local run set ARTIFACTS_AUTH=none')
   }
-  for (const token of [...auth.tokens, ...auth.readTokens]) {
-    if (token.length < 16) errors.push('every token in ARTIFACTS_TOKEN / ARTIFACTS_READ_TOKEN must be at least 16 characters')
+  for (const token of [...auth.tokens, ...auth.readTokens, ...auth.shareTokens]) {
+    if (token.length < 16) errors.push('every token in ARTIFACTS_TOKEN / ARTIFACTS_READ_TOKEN / ARTIFACTS_SHARE_TOKEN must be at least 16 characters')
   }
+  const readTtl = config.share.readTokenTtl
+  if (!(readTtl >= 60 && readTtl <= 86400)) errors.push('ARTIFACTS_READ_LINK_TTL must be between 1m and 24h: read links are meant to be short-lived')
   if (auth.mode === 'oidc') {
     if (!auth.oidc.issuer || !auth.oidc.clientId) errors.push('ARTIFACTS_AUTH=oidc needs ARTIFACTS_OIDC_ISSUER and ARTIFACTS_OIDC_CLIENT_ID')
   }

@@ -14,6 +14,11 @@ All notable changes to this project are documented here. The format follows
 - `ARTIFACTS_READER_URL` (with `ARTIFACTS_READER_REDIRECT`): hand the document page to an external reader.
   `viewUrl` points there, and `GET /a/{slug}` from browsers without a session (or all browsers) answers `302`
   to the template, with `{slug}`, `{version}` (resolved id) and `{n}`. Off by default.
+- `GET|PUT /api/v1/artifacts/{slug}/access` (and `/a/{slug}/access`): whether the caller may read, write or
+  share a document, with a short-lived read link (`ARTIFACTS_READ_LINK_TTL`, default 15m) for anyone who may
+  read, including someone who holds only a share link (`X-Artifacts-Share`). `PUT {"public": bool}` turns
+  sharing on or off.
+- `sharer` role (`ARTIFACTS_SHARE_TOKEN`): may only turn sharing on and off, cannot read or publish.
 - Version diff: `GET /api/v1/artifacts/{slug}/diff?from=&to=` (JSON line blocks or a unified patch), comparing
   the Markdown sources or the visible text; `GET /a/{slug}/diff` in the earlier service's shape;
   `artifacts diff SLUG [FROM] [TO]`.

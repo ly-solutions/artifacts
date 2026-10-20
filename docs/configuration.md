@@ -47,6 +47,8 @@ See [storage.md](storage.md) for the layout.
 | `ARTIFACTS_AUTH` | `token` | `token`, `oidc`, `proxy` or `none`. See [auth](#authentication-modes). |
 | `ARTIFACTS_TOKEN` | — | **Required in token mode.** Editor bearer token(s): publish, edit metadata, share. At least 16 characters; comma-separate several to rotate. Works in every mode, so agents can publish while people use OIDC or a proxy. |
 | `ARTIFACTS_READ_TOKEN` | — | Viewer bearer token(s): read and search only. |
+| `ARTIFACTS_SHARE_TOKEN` | — | Sharer bearer token(s): only turn sharing of a document on and off (`/access`, `/share`), no reading. For a service that sits behind a "Share" button and should not hold a token that can read or publish. Not accepted on `/login`. |
+| `ARTIFACTS_READ_LINK_TTL` | `15m` | Lifetime of the read links `/access` hands out (1m to 24h). |
 | `ARTIFACTS_SECRET` | generated | Key for signing session cookies and share links, at least 32 characters. When unset, a random secret is created once and kept in storage (`system/secret.json`), so every replica shares it. Changing it signs everyone out and invalidates every share link. |
 | `ARTIFACTS_SESSION_TTL` | `12h` | Lifetime of a browser session. |
 | `ARTIFACTS_COOKIE_SAMESITE` | `lax` | `lax`, `strict` or `none`. `none` (https only) lets the embed view keep its session when framed by an app on another site; see [the harnessly integration](integrations/harnessly.md#signing-in-inside-the-pane). |

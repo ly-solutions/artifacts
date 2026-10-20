@@ -8,8 +8,9 @@
  *          trusted only from ARTIFACTS_PROXY_TRUSTED_CIDRS
  *   none   no authentication at all; for a laptop
  *
- * Roles: `editor` publishes and changes metadata and sharing; `viewer` reads.
- * Static tokens: ARTIFACTS_TOKEN gives editor, ARTIFACTS_READ_TOKEN gives viewer.
+ * Roles: `editor` publishes and changes metadata and sharing; `viewer` reads; `sharer` (a service
+ * behind a "Share" button) only turns sharing of a document on and off and cannot read documents.
+ * Static tokens: ARTIFACTS_TOKEN gives editor, ARTIFACTS_READ_TOKEN viewer, ARTIFACTS_SHARE_TOKEN sharer.
  * People (oidc, proxy): editor when listed in ARTIFACTS_EDITORS (default `*`)
  * or a member of ARTIFACTS_EDITOR_GROUPS, viewer otherwise.
  */
@@ -26,6 +27,7 @@ export const ANONYMOUS = Object.freeze({ role: 'none', name: null, via: 'none' }
 
 export const canRead = (principal) => principal.role === 'viewer' || principal.role === 'editor'
 export const canWrite = (principal) => principal.role === 'editor'
+export const canShare = (principal) => principal.role === 'editor' || principal.role === 'sharer'
 
 export function parseCookies(header) {
   const out = {}
@@ -62,6 +64,7 @@ export class Authenticator {
   staticToken(token) {
     if (this.auth.tokens.some((expected) => safeEqual(token, expected))) return { role: 'editor', name: 'token', via: 'bearer' }
     if (this.auth.readTokens.some((expected) => safeEqual(token, expected))) return { role: 'viewer', name: 'read-token', via: 'bearer' }
+    if (this.auth.shareTokens.some((expected) => safeEqual(token, expected))) return { role: 'sharer', name: 'share-token', via: 'bearer' }
     return null
   }
 

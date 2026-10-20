@@ -157,7 +157,11 @@ Each publish, new version, metadata change, share, unshare and delete POSTs
 |---|---|---|
 | editor (`ARTIFACTS_TOKEN`) | agent environments | publishing, metadata |
 | viewer (`ARTIFACTS_READ_TOKEN`) | harnessly backend | listing a conversation's documents, reading versions |
-| editor | harnessly backend, optional | share and unshare buttons in harnessly's UI |
+| sharer (`ARTIFACTS_SHARE_TOKEN`) | harnessly backend, optional | share and unshare buttons in harnessly's UI (`PUT /a/{slug}/access`), without the right to read or publish |
+
+To show a document in the browser without exposing a token, harnessly's backend calls
+`GET /api/v1/artifacts/{slug}/access` (viewer token, or the visitor's share link in `X-Artifacts-Share`) and
+frames the `readLink.url` it gets back: a read-only link to that one document, valid for 15 minutes.
 
 Keep tokens on servers and in agent environments, never in browser code. `ARTIFACTS_TOKEN` accepts a
 comma-separated list, so each machine or person can get its own token and lose it without affecting others.

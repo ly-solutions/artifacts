@@ -108,6 +108,7 @@ and OIDC with workload identity (IRSA) instead of static S3 keys.
 | `existingSecret` | `""` | Name of an existing Secret with any of: ARTIFACTS_TOKEN, ARTIFACTS_READ_TOKEN, ARTIFACTS_SECRET, ARTIFACTS_S3_ACCESS_KEY_ID, ARTIFACTS_S3_SECRET_ACCESS_KEY, ARTIFACTS_OIDC_CLIENT_SECRET, ARTIFACTS_WEBHOOK_SECRET. When set, the values under `secrets` are ignored. |
 | `secrets.token` | `""` | Editor token(s). |
 | `secrets.readToken` | `""` | Viewer token(s). |
+| `secrets.shareToken` | `""` | Sharer token(s): only turn sharing on and off. |
 | `secrets.signingSecret` | `""` | Signing key for sessions and share links (generated and kept in storage when empty). |
 | `secrets.s3AccessKeyId` | `""` | S3 access key id (leave empty with IRSA / workload identity). |
 | `secrets.s3SecretAccessKey` | `""` | S3 secret access key. |

@@ -51,7 +51,9 @@ or Markdown in the typography.
 
 **Share.** A share link is `base64url({s: slug, g: generation, e: expiry}).HMAC`. It opens the artifact only while
 `public` is true and the manifest's `share.gen` equals `g`. Turning sharing off increments the generation,
-revoking every link at once without a revocation list. The signing key is `ARTIFACTS_SECRET`, or a random key
+revoking every link at once without a revocation list. A read link (from `/access`) has the same shape under a
+different signing purpose, always expires within `ARTIFACTS_READ_LINK_TTL`, and opens the document whether or
+not it is shared; it also dies with a generation bump. The signing key is `ARTIFACTS_SECRET`, or a random key
 generated once and stored in `system/secret.json`, shared by all replicas.
 
 **Search.** At start, the index lists `meta/`, loads every manifest and the visible text of each current

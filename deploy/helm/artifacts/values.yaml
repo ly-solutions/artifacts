@@ -147,7 +147,7 @@ webhook:
   # -- URL notified on publish, metadata change, share, unshare and delete.
   url: ""
 
-# -- Name of an existing Secret with any of: ARTIFACTS_TOKEN, ARTIFACTS_READ_TOKEN, ARTIFACTS_SECRET,
+# -- Name of an existing Secret with any of: ARTIFACTS_TOKEN, ARTIFACTS_READ_TOKEN, ARTIFACTS_SHARE_TOKEN, ARTIFACTS_SECRET,
 # ARTIFACTS_S3_ACCESS_KEY_ID, ARTIFACTS_S3_SECRET_ACCESS_KEY, ARTIFACTS_OIDC_CLIENT_SECRET, ARTIFACTS_WEBHOOK_SECRET.
 # When set, the values under `secrets` are ignored.
 existingSecret: ""
@@ -159,6 +159,8 @@ secrets:
   token: ""
   # -- Viewer token(s).
   readToken: ""
+  # -- Sharer token(s): only turn sharing on and off.
+  shareToken: ""
   # -- Signing key for sessions and share links (generated and kept in storage when empty).
   signingSecret: ""
   # -- S3 access key id (leave empty with IRSA / workload identity).

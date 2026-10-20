@@ -442,6 +442,61 @@ export class ArtifactService {
     return { meta }
   }
 
+  /**
+   * A short-lived link that opens one document read-only at /s/{token}, whether or not the document is
+   * shared: handed to someone who may already read it (a share-link holder, a viewer) so a browser can
+   * open the document without the long-lived credential. Turning sharing off revokes it too.
+   */
+  issueReadToken(meta, ttlSeconds = this.config.share.readTokenTtl) {
+    const expires = Math.floor(Date.now() / 1000) + ttlSeconds
+    const token = this.signer.sign('read', { s: meta.slug, g: meta.share?.gen ?? 1, e: expires })
+    return { token, url: this.shareUrl(token), expiresAt: new Date(expires * 1000).toISOString() }
+  }
+
+  async resolveReadToken(token) {
+    const payload = this.signer.verify('read', token)
+    if (!payload || typeof payload.e !== 'number' || !isValidSlug(payload.s)) return null
+    const found = await this.store.getManifest(payload.s)
+    if (!found || (found.meta.share?.gen ?? 1) !== payload.g) return null
+    return found.meta
+  }
+
+  /** The artifact a share link or a read link opens, or null. */
+  async resolveLinkToken(token) {
+    return (await this.resolveShareToken(token)) ?? (await this.resolveReadToken(token))
+  }
+
+  /**
+   * What `principal` (plus an optional share link, read link or `?k=` key) may do with one artifact.
+   * Answers null when the caller has no claim on the document at all, so the route can refuse without
+   * telling whether it exists.
+   */
+  async access(slug, principal, { link, legacyKey } = {}) {
+    const found = isValidSlug(slug) ? await this.store.getManifest(slug) : null
+    const role = principal.role
+    let read = role === 'viewer' || role === 'editor'
+    let via = principal.via
+    if (!read && found && (link || legacyKey)) {
+      const opened = link ? await this.resolveLinkToken(link) : null
+      if ((opened && opened.slug === slug) || (legacyKey && this.legacyKeyMatches(found.meta, legacyKey))) {
+        read = true
+        via = 'link'
+      }
+    }
+    const share = role === 'editor' || role === 'sharer'
+    if (!found || (!read && !share)) return null
+    const meta = found.meta
+    return {
+      slug,
+      public: meta.public === true,
+      viewUrl: this.viewUrl(slug),
+      // A fresh share link for whoever may hand it out; read-only callers get a short-lived read link instead.
+      ...(share && meta.public ? { publicUrl: this.shareUrl(this.issueShareToken(meta)) } : {}),
+      access: { read, write: role === 'editor', share, via },
+      ...(read ? { readLink: this.issueReadToken(meta) } : {}),
+    }
+  }
+
   /** The artifact a share token opens, or null; every refusal looks the same to the caller. */
   async resolveShareToken(token) {
     const payload = this.signer.verify('share', token)

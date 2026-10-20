@@ -7,6 +7,7 @@ All API routes live under `/api/v1`, take and return JSON, and authenticate with
 |---|---|
 | `viewer` | search, read metadata, versions and content |
 | `editor` | everything a viewer can, plus publish, edit metadata, share, unshare, delete |
+| `sharer` | only turn sharing of a document on and off (`/access`, `/share`); cannot read documents or list the catalog. For a service behind a "Share" button (`ARTIFACTS_SHARE_TOKEN`). |
 
 Errors share one shape, written so an agent can fix the request instead of retrying it:
 
@@ -188,6 +189,38 @@ Every call issues a new link; earlier links keep working until they expire or sh
 
 Turns sharing off; every link issued before stops working, including ones not yet expired.
 
+### `GET /api/v1/artifacts/{slug}/access` — what the caller may do
+
+Answers whether the caller may read the document and, when they may, a short-lived read link. The caller is
+identified by a bearer token or session as usual, or — for someone holding a share link and nothing else — by
+that link in the `X-Artifacts-Share` header (the token or the whole `/s/…` URL; `?share=` works too) or an old
+`?k=` key.
+
+```json
+{
+  "slug": "api-rate-limits-proposal-4k2m9x",
+  "public": true,
+  "viewUrl": "https://artifacts.example.com/a/api-rate-limits-proposal-4k2m9x",
+  "publicUrl": "https://artifacts.example.com/s/eyJzIjoi….bAwL…",
+  "access": { "read": true, "write": false, "share": false, "via": "link" },
+  "readLink": { "token": "eyJzIjoi….Qk3x…", "url": "https://artifacts.example.com/s/eyJzIjoi….Qk3x…", "expiresAt": "2026-10-20T12:15:00.000Z" }
+}
+```
+
+- `access.via`: `bearer`, `session`, `proxy`, `none` (no-auth mode) or `link` (a share link or `?k=` key).
+- `readLink` (when `access.read`): opens this one document read-only at `/s/{token}` and `/s/{token}/raw` for
+  `ARTIFACTS_READ_LINK_TTL` (default 15 minutes), whether or not the document is shared, and stops working
+  early when sharing is turned off. Use it to show a document in a browser without handing over the share link
+  or a bearer token, e.g. an external reader's iframe.
+- `publicUrl` (to editors and sharers, when the document is shared): a fresh share link to hand out.
+- A request with no credential at all answers `401`. A share link that is wrong, expired, revoked or for another
+  document answers `404`, the same as a missing document.
+
+### `PUT /api/v1/artifacts/{slug}/access`
+
+Body `{"public": true}` turns sharing on (earlier links keep working), `{"public": false}` turns it off and
+revokes every link. Only `public` is read from the body. Needs an editor or a share token. Answers like `GET`.
+
 ### `GET /api/v1/tags`
 
 `{ "tags": [ { "tag": "incident", "count": 4 }, … ] }`
@@ -204,7 +237,7 @@ Turns sharing off; every link issued before stops working, including ones not ye
 | `/a/{slug}` | Reader: metadata, version picker, share and edit dialogs, download. `?v=` picks a version. With `ARTIFACTS_READER_URL`, browsers without a session (or all browsers) get `302` to the external reader instead. |
 | `/embed/{slug}` | Reader without the catalog chrome, for framing in another app (`ARTIFACTS_FRAME_ANCESTORS`). Posts `{type: "artifacts:ready", slug, version}` to the parent. |
 | `/a/{slug}/raw` | The rendered document alone, sandboxed. `?v=`, `?theme=light\|dark`, `?download=html\|markdown`. |
-| `/s/{token}` | Shared, read-only reader; `/s/{token}/raw` the document. Refusals are indistinguishable 404s. |
+| `/s/{token}` | Shared, read-only reader; `/s/{token}/raw` the document. Takes share links and short-lived read links (`readLink` from `/access`). Refusals are indistinguishable 404s. |
 | `/login`, `/logout`, `/auth/callback` | Sign-in for `token` and `oidc` modes. |
 | `/healthz`, `/readyz` | Liveness, and readiness including a storage check. |
 
@@ -235,6 +268,7 @@ Clients of the earlier internal service keep working:
 |---|---|
 | `POST /a` | Same body as `POST /api/v1/artifacts`; `rotateKey: true` revokes the share links of a shared artifact. Answers `{slug, public, viewUrl, publicUrl?, version, versionInfo: {n, sha}, created}`. |
 | `PATCH /a/{slug}` | Same body as the metadata `PATCH`. Answers `{ok, slug, title, description, task, tags, public, viewUrl, publicUrl?}`. |
+| `GET\|PUT /a/{slug}/access` | Same as `/api/v1/artifacts/{slug}/access`; the answer is a superset of the earlier `{slug, public, viewUrl, publicUrl?}`. |
 | `GET /a/{slug}/diff?from=&to=` | `{from, to, fromVersion, toVersion, source, approximate, stats, blocks}` with version ids in `from`/`to`; same reading rights and parameters as `/api/v1/artifacts/{slug}/diff`. |
 | `GET /a/{slug}/versions` | `{versions: [{n, id, sha, createdAt, author, note, current, …}]}`. `sha` repeats `id`; it is a git sha only for imported versions or with `ARTIFACTS_VERSION_ID=sha`. |
 | `GET /a/{slug}?k=<key>` | Old share links of imported documents, while the document stays shared. |

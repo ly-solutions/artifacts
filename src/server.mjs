@@ -7,7 +7,7 @@ import { createServer } from 'node:http'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canWrite, parseCookies } from './auth/index.mjs'
+import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canShare, canWrite, parseCookies } from './auth/index.mjs'
 import { parseDuration } from './config.mjs'
 import { unifiedDiff } from './diff.mjs'
 import { renderVersion } from './render/doc.mjs'
@@ -155,8 +155,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
     if (!origin || !config.embed.corsOrigins.includes(origin)) return false
     res.setHeader('access-control-allow-origin', origin)
     res.setHeader('vary', 'Origin')
-    res.setHeader('access-control-allow-headers', 'authorization, content-type')
-    res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS')
+    res.setHeader('access-control-allow-headers', 'authorization, content-type, x-artifacts-share')
+    res.setHeader('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
     res.setHeader('access-control-max-age', '600')
     return true
   }
@@ -240,6 +240,38 @@ export async function createApp(config, { storage, log = createLogger(config.log
     json(res, 200, { url: result.url, expiresAt: result.expiresAt, artifact: service.present(result.meta) })
   }
 
+  /** A share link may come as a token, as a whole /s/… URL, in a header or in the query. */
+  function presentedLink(req, url) {
+    const raw = String(req.headers['x-artifacts-share'] ?? url.searchParams.get('share') ?? '').trim()
+    if (!raw) return undefined
+    return /\/s\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/.exec(raw)?.[1] ?? raw
+  }
+
+  /** GET and PUT of /a/{slug}/access and /api/v1/artifacts/{slug}/access. */
+  async function accessRoute(req, res, url, slug, principal, method) {
+    if (method === 'PUT') {
+      if (!canShare(principal)) {
+        if (principal.role === 'none') return json(res, 401, { error: 'unauthorized', hint: 'send Authorization: Bearer <editor or share token>' }, { 'www-authenticate': 'Bearer' })
+        throw new ApiError(403, 'forbidden', { hint: 'this token or account cannot change sharing' })
+      }
+      checkSameOrigin(req, principal)
+      const body = await readJson(req, 16 * 1024)
+      if (typeof body.public !== 'boolean') throw new ApiError(400, 'invalid', { problems: ['public: true opens the document by link, false closes it and revokes every link'] })
+      // Only `public` is read from the body: a share token can neither rename nor retag a document.
+      if (body.public) await service.share(slug)
+      else await service.unshare(slug)
+    } else if (method !== 'GET') {
+      return json(res, 405, { error: 'method_not_allowed' })
+    }
+    const state = await service.access(slug, principal, { link: presentedLink(req, url), legacyKey: url.searchParams.get('k') ?? undefined })
+    if (state) return json(res, 200, state)
+    if (principal.role === 'none' && !presentedLink(req, url) && !url.searchParams.get('k')) {
+      return json(res, 401, { error: 'unauthorized', hint: 'send a bearer token, or the share link in X-Artifacts-Share' }, { 'www-authenticate': 'Bearer' })
+    }
+    // A wrong link and a missing document look the same.
+    return json(res, 404, { error: 'not_found' })
+  }
+
   async function serveContent(res, { meta, ref, theme, download }) {
     const { version, n } = service.resolveVersion(meta, ref)
     const content = await service.store.readVersionContent(meta.slug, version)
@@ -310,7 +342,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     // Shared view: the token is the whole credential; refusals all look alike.
     const sharedMatch = /^\/s\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)(\/raw)?$/.exec(path)
     if (sharedMatch && method === 'GET') {
-      const meta = await service.resolveShareToken(sharedMatch[1])
+      const meta = await service.resolveLinkToken(sharedMatch[1])
       if (!meta) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Link not available', message: 'This link has expired or was revoked, or it never existed.', principal: ANONYMOUS }))
       if (sharedMatch[2]) return serveContent(res, { meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download') })
       const { n } = service.resolveVersion(meta, url.searchParams.get('v'))
@@ -343,7 +375,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
         const form = new URLSearchParams((await readBody(req, 16 * 1024)).toString('utf8'))
         const found = auth.staticToken(form.get('token') ?? '')
         const target = safeNext(form.get('next'))
-        if (!found) {
+        // A share token belongs to a service, not to a person reading in a browser.
+        if (!found || found.role === 'sharer') {
           auth.loginFailed(ip)
           return html(res, 401, loginPage({ siteName: config.siteName, mode: 'token', next: target, error: 'That token is not valid.' }))
         }
@@ -380,6 +413,11 @@ export async function createApp(config, { storage, log = createLogger(config.log
         if (!canWrite(principal)) throw new ApiError(403, 'forbidden', { hint: 'this token or account can read but not write' })
         checkSameOrigin(req, principal)
       }
+      const needShare = () => {
+        if (principal.role === 'none') throw new ApiError(401, 'unauthorized', { hint: 'send Authorization: Bearer <token>' })
+        if (!canShare(principal)) throw new ApiError(403, 'forbidden', { hint: 'this token or account cannot change sharing' })
+        checkSameOrigin(req, principal)
+      }
       if (path === '/api/v1/whoami' && method === 'GET') {
         return json(res, 200, { name: principal.name, role: principal.role, via: principal.via, auth: config.auth.mode })
       }
@@ -410,9 +448,10 @@ export async function createApp(config, { storage, log = createLogger(config.log
         }
         if (sub === '/content' && method === 'GET') return needRead(), apiContent(req, res, url, slug)
         if (sub === '/diff' && method === 'GET') return needRead(), apiDiff(res, url, slug)
-        if (sub === '/share' && method === 'POST') return needWrite(), apiShare(req, res, slug)
+        if (sub === '/access') return accessRoute(req, res, url, slug, principal, method)
+        if (sub === '/share' && method === 'POST') return needShare(), apiShare(req, res, slug)
         if (sub === '/share' && method === 'DELETE') {
-          needWrite()
+          needShare()
           const { meta } = await service.unshare(slug)
           return json(res, 200, { artifact: service.present(meta) })
         }
@@ -430,6 +469,9 @@ export async function createApp(config, { storage, log = createLogger(config.log
       if (rotate && result.meta.public) result.meta = (await service.share(result.meta.slug, { rotate: true })).meta
       return json(res, result.created ? 201 : 200, legacyPublishResponse(result))
     }
+
+    const accessMatch = /^\/a\/([a-z0-9][a-z0-9-]*)\/access$/.exec(path)
+    if (accessMatch) return accessRoute(req, res, url, accessMatch[1], principal, method)
 
     // ---- UI ------------------------------------------------------------------
     if (method !== 'GET') {
