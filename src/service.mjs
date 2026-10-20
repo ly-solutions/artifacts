@@ -7,7 +7,7 @@ import { createHash, createHmac } from 'node:crypto'
 import { Catalog, contentText } from './catalog.mjs'
 import { Signer, safeEqual } from './signing.mjs'
 import { ConflictError } from './storage/index.mjs'
-import { ArtifactStore, SCHEMA, newVersionId } from './store.mjs'
+import { ArtifactStore, SCHEMA, VersionExistsError, contentVersionId, isValidVersionId, newVersionId } from './store.mjs'
 import { isValidSlug, makeSlug, normalizeTags, titleFromHtml, titleFromMarkdown } from './text.mjs'
 
 export class ApiError extends Error {
@@ -198,6 +198,9 @@ export class ArtifactService {
     }
     if (body.author !== undefined && body.author !== null && (typeof body.author !== 'string' || body.author.length > 120)) problems.push('author: a string up to 120 characters')
     if (body.baseVersion !== undefined && body.baseVersion !== null && !Number.isInteger(body.baseVersion)) problems.push('baseVersion: the version number your edit is based on')
+    if (body.versionId !== undefined && body.versionId !== null && !isValidVersionId(body.versionId)) {
+      problems.push('versionId: an id kept from another system (e.g. a git sha): 6 to 64 letters, digits and dashes, not only digits')
+    }
     if (body.public !== undefined) problems.push('public: publishing never changes access; use PATCH /api/v1/artifacts/{slug} or the share endpoints')
     this.validateLinks(body, problems)
     const bytes = Buffer.byteLength(body.html ?? '') + Buffer.byteLength(body.markdown ?? '')
@@ -235,23 +238,25 @@ export class ArtifactService {
     }
     if (!slug) slug = makeSlug(title)
 
-    const versionId = newVersionId()
-    await this.store.putVersionContent(slug, versionId, { html, markdown })
+    const createdAt = stamp()
+    const sha256 = createHash('sha256').update(html ?? '').update('\0').update(markdown ?? '').digest('hex')
+    const versionId = await this.storeVersion({ slug, createdAt, sha256, html, markdown, explicitId: body.versionId ?? null })
     const author = body.author ?? principal.name ?? null
     const version = {
       id: versionId,
-      createdAt: stamp(),
+      createdAt,
       author,
       note: body.note?.trim() || null,
       html: Boolean(html),
       markdown: Boolean(markdown),
       bytes: Buffer.byteLength(html ?? '') + Buffer.byteLength(markdown ?? ''),
-      sha256: createHash('sha256').update(html ?? '').update('\0').update(markdown ?? '').digest('hex'),
+      sha256,
     }
 
     for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt += 1) {
       const found = await this.store.getManifest(slug)
       const existing = found?.meta
+      if (body.versionId && existing?.versions.some((v) => v.id === body.versionId)) throw versionExists(body.versionId)
       if (existing && Number.isInteger(body.baseVersion) && body.baseVersion !== existing.versions.length) {
         throw new ApiError(409, 'version_conflict', {
           hint: `your edit is based on version ${body.baseVersion}, the artifact is at version ${existing.versions.length}; read it again and merge`,
@@ -288,6 +293,36 @@ export class ArtifactService {
       }
     }
     throw new ApiError(503, 'busy', { hint: 'too many concurrent updates of this artifact; retry' })
+  }
+
+  /**
+   * Writes a version's content under a fresh id (format from ARTIFACTS_VERSION_ID) and returns the id.
+   * An explicit id (kept from another system) is accepted once per artifact; retrying the same content
+   * under it is idempotent, so an interrupted import can run again.
+   */
+  async storeVersion({ slug, createdAt, sha256, html, markdown, explicitId }) {
+    if (explicitId) {
+      const found = await this.store.getManifest(slug)
+      if (found?.meta.versions.some((v) => v.id === explicitId)) throw versionExists(explicitId)
+      try {
+        await this.store.putVersionContent(slug, explicitId, { html, markdown })
+      } catch (error) {
+        if (!(error instanceof VersionExistsError)) throw error
+        const stored = await this.store.readVersionContent(slug, { id: explicitId, html: html !== undefined, markdown: markdown !== undefined })
+        if (stored.html !== html || stored.markdown !== markdown) throw versionExists(explicitId)
+      }
+      return explicitId
+    }
+    for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt += 1) {
+      const id = this.config.versions?.idFormat === 'sha' ? contentVersionId({ slug, createdAt, sha256, attempt }) : newVersionId()
+      try {
+        await this.store.putVersionContent(slug, id, { html, markdown })
+        return id
+      } catch (error) {
+        if (!(error instanceof VersionExistsError)) throw error
+      }
+    }
+    throw new ApiError(503, 'busy', { hint: 'could not allocate a version id; retry' })
   }
 
   /** Apply `mutate(meta)` with a compare-and-swap loop; `mutate` returns false to skip writing. */
@@ -409,6 +444,10 @@ export class ArtifactService {
       })
       .catch((error) => this.log('warn', 'webhook failed', { event, error: error.message }))
   }
+}
+
+function versionExists(id) {
+  return new ApiError(409, 'version_exists', { hint: `this artifact already has a version "${id}"; publish without versionId or with another id` })
 }
 
 function revoke(meta) {

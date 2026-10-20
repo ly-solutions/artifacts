@@ -16,7 +16,7 @@
  * history behind as delete markers. Explicit version objects behave the same
  * on every backend.
  */
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 
 import { ConflictError } from './storage/index.mjs'
 import { isValidSlug } from './text.mjs'
@@ -28,12 +28,37 @@ const VERSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9-]{5,63}$/
 export const manifestKey = (slug) => `meta/${slug}.json`
 export const contentKey = (slug, versionId, file) => `content/${slug}/${versionId}/${file}`
 
+/**
+ * Version ids are opaque strings to clients; the format of new ones is chosen by
+ * ARTIFACTS_VERSION_ID. Whatever the format, ids already stored keep resolving,
+ * so switching it never breaks a link.
+ *
+ *   timestamp  20261019T120000Z-a1b2c3: sortable, readable (default)
+ *   sha        40 lowercase hex characters, the shape of a git object id, for readers that expect one
+ */
+export const VERSION_ID_FORMATS = ['timestamp', 'sha']
+
 /** Sortable, unique version id: 20261019T120000Z-a1b2c3. */
 export function newVersionId(now = new Date()) {
   return `${now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}-${randomBytes(3).toString('hex')}`
 }
 
-export const isValidVersionId = (id) => typeof id === 'string' && VERSION_ID_RE.test(id)
+/**
+ * A git-shaped id: SHA-1 over the slug, the version's creation time and its
+ * content hash, so it can be recomputed from the manifest. `attempt` separates
+ * two identical publishes of one artifact within the same second.
+ */
+export function contentVersionId({ slug, createdAt, sha256, attempt = 0 }) {
+  const hash = createHash('sha1').update(`artifacts-version\0${slug}\0${createdAt}\0${sha256}`)
+  if (attempt) hash.update(`\0${attempt}`)
+  return hash.digest('hex')
+}
+
+// Plain numbers are version numbers in every `?v=`, so an id must not look like one.
+export const isValidVersionId = (id) => typeof id === 'string' && VERSION_ID_RE.test(id) && !/^\d+$/.test(id)
+
+/** Content for this version id is already stored. */
+export class VersionExistsError extends Error {}
 
 export class ArtifactStore {
   constructor(storage) {
@@ -71,7 +96,7 @@ export class ArtifactStore {
       this.storage
         .put(contentKey(slug, versionId, file), Buffer.from(text, 'utf8'), { contentType: type, ifNoneMatch: '*' })
         .catch((error) => {
-          if (error instanceof ConflictError) throw new Error(`version ${versionId} of ${slug} already exists`)
+          if (error instanceof ConflictError) throw new VersionExistsError(`version ${versionId} of ${slug} already exists`)
           throw error
         })
     if (typeof html === 'string') await write('index.html', html, 'text/html; charset=utf-8')

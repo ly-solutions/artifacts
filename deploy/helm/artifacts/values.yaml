@@ -121,6 +121,10 @@ embed:
   # -- Origins allowed to call the API from a browser (comma-separated).
   corsOrigins: ""
 
+versions:
+  # -- Format of new version ids: timestamp or sha (40 hex characters).
+  idFormat: timestamp
+
 content:
   # -- Script origins published documents may load.
   scriptSrc: https://cdnjs.cloudflare.com,https://cdn.jsdelivr.net

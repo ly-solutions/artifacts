@@ -94,7 +94,8 @@ artifacts/<slug>/meta.yaml     title, description, author, task, tags, public, k
 ```
 
 - Commit trailers `Author:` and `Note:` become the version's author and note; otherwise the commit author is used.
-- Each version keeps its **commit sha as the version id**, so `?v=<sha>` links resolve after the move.
+- Each version keeps its **commit sha as the version id**, so `?v=<sha>` links resolve after the move. To keep
+  new versions git-shaped too (for a reader that only accepts hex ids), set `ARTIFACTS_VERSION_ID=sha`.
 - Commits that only touched `meta.yaml` are not versions.
 - A document with `public: true` and a `key` keeps answering its old `/a/<slug>?k=<key>` link until sharing is
   turned off. Private documents do not keep their old keys.

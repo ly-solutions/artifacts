@@ -97,6 +97,7 @@ spec:
             - { name: ARTIFACTS_CONTENT_CONNECT_SRC, value: {{ .Values.content.connectSrc | quote }} }
             - { name: ARTIFACTS_CONTENT_FRAME_SRC, value: {{ .Values.content.frameSrc | quote }} }
             - { name: ARTIFACTS_SHARE_TTL, value: {{ .Values.share.ttl | quote }} }
+            - { name: ARTIFACTS_VERSION_ID, value: {{ .Values.versions.idFormat | quote }} }
             - { name: ARTIFACTS_WEBHOOK_URL, value: {{ .Values.webhook.url | quote }} }
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

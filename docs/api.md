@@ -22,6 +22,7 @@ Errors share one shape, written so an agent can fix the request instead of retry
 | 404 | `not_found`, `version_not_found` | No such artifact or version. |
 | 409 | `duplicate` | Publishing without a slug, and an artifact with the same title exists. `candidates` lists them. |
 | 409 | `version_conflict` | `baseVersion` is older than the current version. |
+| 409 | `version_exists` | `versionId` names a version the artifact already has. |
 | 413 | `invalid` | The document is larger than `ARTIFACTS_MAX_DOCUMENT_BYTES`. |
 | 415 | `unsupported_media_type` | Send `Content-Type: application/json`. |
 | 503 | `unavailable`, `busy` | Storage did not answer, or too many concurrent writes to one artifact. Retry. |
@@ -86,7 +87,8 @@ ordered by last update.
   "description": "…", "tags": ["incident"], "task": "PROJ-342", "link": "https://…", "session": "conv-31c7",
   "author": "Ada",
   "baseVersion": 2,
-  "new": false
+  "new": false,
+  "versionId": null
 }
 ```
 
@@ -99,6 +101,10 @@ ordered by last update.
 - Fields that are not sent keep their previous values; `null` clears `description`, `task`, `link`, `session`.
 - `baseVersion` makes the write conditional: `409 version_conflict` if someone published in between.
 - `public` is refused here: publishing never changes who can read.
+- `versionId` keeps an id from another system, e.g. a git sha when an importer replays history through the API
+  (6 to 64 letters, digits and dashes, not only digits). An id the artifact already has is refused with
+  `409 version_exists`; replaying the same content under an id whose manifest write was interrupted succeeds.
+  Leave it out and the server assigns an id in the `ARTIFACTS_VERSION_ID` format.
 
 Answer `201` (created) or `200` (new version):
 
@@ -125,6 +131,11 @@ Deletes the artifact and every version. `{ "deleted": "<slug>" }`.
 `{ "slug": "…", "versions": [ { "n": 3, "id": "…", "createdAt": "…", "author": "…", "note": "…", "formats": ["html"], "bytes": 2817, "current": true }, … ] }`
 
 Versions imported from git carry `"source": "git"` and keep the commit sha as `id`.
+
+**Version ids are opaque.** New ids follow `ARTIFACTS_VERSION_ID` (`timestamp` by default, or `sha` for 40-hex
+ids); an artifact can mix formats (imported shas, then new ids). Clients store and pass ids back as given, and
+use `n` for ordering. Every `?v=`/`from`/`to` parameter takes a version number, a full id, or an unambiguous id
+prefix of at least 7 characters.
 
 ### `GET /api/v1/artifacts/{slug}/content`
 
@@ -194,5 +205,5 @@ Clients of the earlier internal service keep working:
 |---|---|
 | `POST /a` | Same body as `POST /api/v1/artifacts`; `rotateKey: true` revokes the share links of a shared artifact. Answers `{slug, public, viewUrl, publicUrl?, version, versionInfo: {n, sha}, created}`. |
 | `PATCH /a/{slug}` | Same body as the metadata `PATCH`. Answers `{ok, slug, title, description, task, tags, public, viewUrl, publicUrl?}`. |
-| `GET /a/{slug}/versions` | `{versions: [{n, id, sha, createdAt, author, note, current, …}]}` |
+| `GET /a/{slug}/versions` | `{versions: [{n, id, sha, createdAt, author, note, current, …}]}`. `sha` repeats `id`; it is a git sha only for imported versions or with `ARTIFACTS_VERSION_ID=sha`. |
 | `GET /a/{slug}?k=<key>` | Old share links of imported documents, while the document stays shared. |

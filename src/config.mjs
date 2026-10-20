@@ -1,4 +1,5 @@
 import { bucketNameProblem } from './storage/s3.mjs'
+import { VERSION_ID_FORMATS } from './store.mjs'
 
 /**
  * Configuration from environment variables. Every option is documented in
@@ -109,6 +110,9 @@ export function loadConfig(env = process.env) {
       url: env.ARTIFACTS_WEBHOOK_URL || '',
       secret: env.ARTIFACTS_WEBHOOK_SECRET || '',
     },
+    versions: {
+      idFormat: (env.ARTIFACTS_VERSION_ID || 'timestamp').toLowerCase(),
+    },
     index: {
       refreshSeconds: parseDuration(env.ARTIFACTS_INDEX_REFRESH || '10s', 'ARTIFACTS_INDEX_REFRESH'),
     },
@@ -131,6 +135,7 @@ export function validateConfig(config) {
     else if (bucketNameProblem(config.s3.bucket)) errors.push(`ARTIFACTS_S3_BUCKET: ${bucketNameProblem(config.s3.bucket)}`)
     if (!config.s3.accessKeyId || !config.s3.secretAccessKey) errors.push('S3 credentials missing: set ARTIFACTS_S3_ACCESS_KEY_ID and ARTIFACTS_S3_SECRET_ACCESS_KEY (or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)')
   }
+  if (!VERSION_ID_FORMATS.includes(config.versions.idFormat)) errors.push(`ARTIFACTS_VERSION_ID must be one of ${VERSION_ID_FORMATS.join(', ')}, got "${config.versions.idFormat}"`)
   const { auth } = config
   if (!AUTH_MODES.includes(auth.mode)) errors.push(`ARTIFACTS_AUTH must be one of ${AUTH_MODES.join(', ')}, got "${auth.mode}"`)
   if (auth.mode === 'token' && auth.tokens.length === 0) {
