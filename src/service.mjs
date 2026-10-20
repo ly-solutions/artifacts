@@ -142,8 +142,14 @@ export class ArtifactService {
   async search(query) {
     await this.catalog.ensureFresh()
     const result = this.catalog.search(query)
+    const offset = query.offset ?? 0
+    const next = offset + result.items.length
     return {
       total: result.total,
+      offset,
+      limit: query.limit ?? 50,
+      // Where the next page starts, or null on the last page: clients loop until null instead of guessing from `total`.
+      nextOffset: next < result.total ? next : null,
       items: result.items.map(({ meta, score, snippet }) => ({ ...this.present(meta), ...(snippet ? { snippet } : {}), ...(query.q ? { score } : {}) })),
     }
   }

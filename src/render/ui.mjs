@@ -84,7 +84,20 @@ function linkChips(item, { task = true } = {}) {
   return out.join('')
 }
 
-export function resultsList({ items, total, q, tags }) {
+/** Catalog address with the current query, tags and a page offset. */
+function catalogHref({ q, tags, offset }) {
+  const params = new URLSearchParams()
+  if (q) params.set('q', q)
+  for (const tag of tags ?? []) params.append('tag', tag)
+  if (offset) params.set('offset', String(offset))
+  const query = params.toString()
+  return query ? `/?${query}` : '/'
+}
+
+export function resultsList({ items, total, q, tags, offset = 0, limit = items.length, nextOffset = null }) {
+  if (!items.length && offset > 0) {
+    return `<p class="empty">No more artifacts on this page. <a href="${e(catalogHref({ q, tags }))}">Back to the first page</a>.</p>`
+  }
   if (!items.length) {
     const why = q || tags.length ? 'Nothing matches. Try fewer words or another tag.' : 'No artifacts yet. Publish one with <code>artifacts publish --file page.html --title "…"</code>.'
     return `<p class="empty">${why}</p>`
@@ -106,7 +119,12 @@ export function resultsList({ items, total, q, tags }) {
 </li>`,
     )
     .join('\n')
-  return `<p class="count">${total} ${total === 1 ? 'artifact' : 'artifacts'}</p><ul class="cards">${rows}</ul>`
+  const range = offset > 0 || nextOffset !== null ? ` · ${offset + 1}–${offset + items.length}` : ''
+  const pages = []
+  if (offset > 0) pages.push(`<a class="page-link" rel="prev" href="${e(catalogHref({ q, tags, offset: Math.max(0, offset - limit) }))}">Newer</a>`)
+  if (nextOffset !== null) pages.push(`<a class="page-link" rel="next" href="${e(catalogHref({ q, tags, offset: nextOffset }))}">Older (${total - nextOffset} more)</a>`)
+  const pager = pages.length ? `<nav class="pager" aria-label="Pages">${pages.join('')}</nav>` : ''
+  return `<p class="count">${total} ${total === 1 ? 'artifact' : 'artifacts'}${range}</p><ul class="cards">${rows}</ul>${pager}`
 }
 
 export function catalogPage({ siteName, principal, q, tags, results, allTags }) {

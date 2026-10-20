@@ -12,7 +12,8 @@ async function cli(args, env) {
   const err = []
   const origOut = process.stdout.write.bind(process.stdout)
   const origErr = process.stderr.write.bind(process.stderr)
-  process.stdout.write = (chunk) => out.push(String(chunk)) && true
+  // The test runner reports through stdout as binary chunks; the CLI writes strings.
+  process.stdout.write = (chunk) => (typeof chunk === 'string' ? out.push(chunk) : origOut(chunk)) && true
   process.stderr.write = (chunk) => err.push(String(chunk)) && true
   try {
     const code = await main(args, { ARTIFACTS_AUTHOR: 'cli-tester', ...env })

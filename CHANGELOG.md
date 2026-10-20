@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- List pagination you can follow: `GET /api/v1/artifacts` answers with `offset`, `limit` and `nextOffset`
+  (`null` on the last page) plus a `Link: rel="next"` header; the catalog page pages by 200 with Newer/Older
+  links instead of silently showing only the first 200; `artifacts find` takes `--offset` and `--all`.
+
 ### Fixed
 
 - Invalid S3 bucket names are refused at start with the naming rule, instead of failing on the first request

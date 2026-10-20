@@ -58,11 +58,18 @@ while share links work. Single-artifact answers also carry `versions`, newest fi
 ### `GET /api/v1/artifacts` — list and search
 
 Query: `q` (words; all must match title, slug, tags, description, task, author or text), `tag` (repeatable;
-all must be present), `task`, `session`, `author`, `limit` (default 50, max 500), `offset`.
+all must be present), `task`, `session`, `author`, `limit` (default 50, larger values are lowered to 500),
+`offset` (default 0).
 
 ```json
-{ "total": 2, "items": [ { "...artifact": "...", "score": 21, "snippet": "…join one incident review as an observer…" } ] }
+{ "total": 120, "offset": 0, "limit": 50, "nextOffset": 50,
+  "items": [ { "...artifact": "...", "score": 21, "snippet": "…join one incident review as an observer…" } ] }
 ```
+
+The answer is one page. `nextOffset` is where the next page starts, or `null` on the last page; the same address
+is in a `Link: <…>; rel="next"` header. A client that needs everything loops until `nextOffset` is `null` rather
+than assuming one request returns the whole catalog. The catalog page (`/`) shows 200 artifacts per page with
+"Newer" and "Older" links (`?offset=`), and `artifacts find --all` follows the pages.
 
 Results are ranked when `q` is set (title hits weigh most, then tags, then metadata, then text) and otherwise
 ordered by last update.
@@ -152,7 +159,7 @@ Turns sharing off; every link issued before stops working, including ones not ye
 
 | Path | What |
 |---|---|
-| `/` | Catalog with search and tag filters. `?q=`, `?tag=`. |
+| `/` | Catalog with search and tag filters. `?q=`, `?tag=`, `?offset=` (200 per page). |
 | `/a/{slug}` | Reader: metadata, version picker, share and edit dialogs, download. `?v=` picks a version. |
 | `/embed/{slug}` | Reader without the catalog chrome, for framing in another app (`ARTIFACTS_FRAME_ANCESTORS`). Posts `{type: "artifacts:ready", slug, version}` to the parent. |
 | `/a/{slug}/raw` | The rendered document alone, sandboxed. `?v=`, `?theme=light\|dark`, `?download=html\|markdown`. |

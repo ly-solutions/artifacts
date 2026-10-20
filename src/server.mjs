@@ -15,6 +15,8 @@ import { ApiError, ArtifactService } from './service.mjs'
 import { isValidSlug, normalizeTags } from './text.mjs'
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url))
+const MAX_PAGE = 500
+const CATALOG_PAGE = 200
 const TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.txt': 'text/plain; charset=utf-8' }
 
 export function createLogger({ level = 'info', format = 'json' } = {}, stream = process.stdout) {
@@ -170,10 +172,17 @@ export async function createApp(config, { storage, log = createLogger(config.log
       task: params.get('task') ?? undefined,
       session: params.get('session') ?? undefined,
       author: params.get('author') ?? undefined,
-      limit: Math.min(Number(params.get('limit') ?? 50) || 50, 500),
-      offset: Math.max(Number(params.get('offset') ?? 0) || 0, 0),
+      limit: Math.min(Math.floor(Number(params.get('limit') ?? 50)) || 50, MAX_PAGE),
+      offset: Math.max(Math.floor(Number(params.get('offset') ?? 0)) || 0, 0),
     })
-    json(res, 200, result)
+    const headers = {}
+    if (result.nextOffset !== null) {
+      const next = new URLSearchParams(params)
+      next.set('offset', String(result.nextOffset))
+      next.set('limit', String(result.limit))
+      headers.link = `<${config.publicUrl}/api/v1/artifacts?${next}>; rel="next"`
+    }
+    json(res, 200, result, headers)
   }
 
   async function apiPublish(req, res, principal) {
@@ -434,7 +443,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
       if (!canRead(principal)) return deny(req, res, principal, url)
       const q = url.searchParams.get('q') ?? ''
       const tags = url.searchParams.getAll('tag').flatMap((tag) => normalizeTags(tag))
-      const results = await service.search({ q, tags, limit: 200 })
+      const offset = Math.max(Math.floor(Number(url.searchParams.get('offset') ?? 0)) || 0, 0)
+      const results = await service.search({ q, tags, limit: CATALOG_PAGE, offset })
       if (url.searchParams.get('partial') === '1') return html(res, 200, resultsList({ ...results, q, tags }))
       return html(res, 200, catalogPage({ siteName: config.siteName, principal, q, tags, results, allTags: await service.tags() }))
     }

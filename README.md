@@ -107,7 +107,7 @@ One command for people, agents and operators. It reads `ARTIFACTS_URL` and `ARTI
 
 | Command | Does |
 |---|---|
-| `artifacts find [words…] [--tag t] [--task ID] [--session ID]` | search titles, tags and text |
+| `artifacts find [words…] [--tag t] [--task ID] [--session ID] [--all]` | search titles, tags and text; `--all` follows every page |
 | `artifacts publish --file doc.md\|page.html [--title …] [--tags a,b] [--task ID] [--link URL]` | publish a new document |
 | `artifacts publish --slug SLUG --file … --note "what changed"` | publish a new version of an existing one |
 | `artifacts versions SLUG` | version history: number, date, author, note |

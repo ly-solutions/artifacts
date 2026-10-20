@@ -14,7 +14,7 @@ const VERSION = '0.1.0'
 const HELP = `artifacts ${VERSION} — versioned documents for people and coding agents
 
 Client (needs ARTIFACTS_URL and ARTIFACTS_TOKEN):
-  artifacts find [words…] [--tag t] [--task ID] [--session ID] [--json]
+  artifacts find [words…] [--tag t] [--task ID] [--session ID] [--limit N] [--offset N] [--all] [--json]
   artifacts publish --file page.html|doc.md [--markdown doc.md] [--title "…"]
                     [--slug SLUG --note "what changed"] [--description "…"] [--tags a,b]
                     [--task ID] [--link URL] [--session ID] [--author NAME]
@@ -45,7 +45,7 @@ Environment:
   ARTIFACTS_TASK     default --task
 `
 
-const BOOLEAN_FLAGS = new Set(['new', 'share', 'json', 'yes', 'rotate', 'no-task', 'no-link', 'no-session', 'overwrite', 'dry-run', 'help', 'version', 'verbose'])
+const BOOLEAN_FLAGS = new Set(['all', 'new', 'share', 'json', 'yes', 'rotate', 'no-task', 'no-link', 'no-session', 'overwrite', 'dry-run', 'help', 'version', 'verbose'])
 const REPEATABLE = new Set(['add-tag', 'remove-tag', 'tag'])
 
 export function parseArgs(argv) {
@@ -245,8 +245,17 @@ async function cmdFind(args, request) {
   if (args.task) params.set('task', args.task)
   if (args.session) params.set('session', args.session)
   if (args.author) params.set('author', args.author)
-  params.set('limit', args.limit ?? '25')
+  params.set('limit', args.limit ?? (args.all ? '500' : '25'))
+  if (args.offset) params.set('offset', args.offset)
   const { data } = await request('GET', `/api/v1/artifacts?${params}`)
+  // --all follows nextOffset to the end, so nothing past the first page is silently dropped.
+  while (args.all && data.nextOffset !== null && data.nextOffset !== undefined) {
+    params.set('offset', String(data.nextOffset))
+    const page = (await request('GET', `/api/v1/artifacts?${params}`)).data
+    data.items.push(...page.items)
+    data.nextOffset = page.nextOffset
+    data.total = page.total
+  }
   if (args.json) {
     out(JSON.stringify(data, null, 2))
     return 0
@@ -256,7 +265,8 @@ async function cmdFind(args, request) {
     return 0
   }
   for (const item of data.items) out(`${item.slug} — ${item.title}${item.task ? ` (${item.task})` : ''} · v${item.versionCount} · ${item.viewUrl}`)
-  if (data.total > data.items.length) note(`${data.total - data.items.length} more; narrow the query or pass --limit`)
+  const shown = (data.offset ?? 0) + data.items.length
+  if (data.total > shown) note(`${data.total - shown} more; narrow the query, or pass --offset ${shown} or --all`)
   return 0
 }
 
