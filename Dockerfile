@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
 
-FROM node:22-alpine
+FROM node:26-alpine
 LABEL org.opencontainers.image.title="artifacts" \
       org.opencontainers.image.description="Versioned documents that people and coding agents publish, find and share" \
       org.opencontainers.image.source="https://github.com/ly-solutions/artifacts" \
