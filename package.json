@@ -50,10 +50,10 @@
     "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
-    "marked": "^18.1.1",
+    "marked": "^18.1.2",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "oxlint": "1.89.0"
+    "oxlint": "1.90.0"
   }
 }
