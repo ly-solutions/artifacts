@@ -11,3 +11,4 @@ scripts
 *.log
 .env
 .env.*
+harnessly-app

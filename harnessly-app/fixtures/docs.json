@@ -1,0 +1,22 @@
+{
+  "tools": [
+    {
+      "name": "doc_find",
+      "description": "Поиск документов",
+      "inputSchema": { "type": "object", "properties": { "query": { "type": "string" } } },
+      "result": { "content": [{ "type": "text", "text": "{\"total\":1,\"items\":[{\"slug\":\"checkout-incident-a1b2c3\",\"title\":\"Сбой оплаты 14 марта\",\"url\":\"https://docs.example.com/a/checkout-incident-a1b2c3\",\"versions\":2}]}" }] }
+    },
+    {
+      "name": "doc_show",
+      "description": "Документ",
+      "inputSchema": { "type": "object", "properties": { "slug": { "type": "string" } } },
+      "result": { "content": [{ "type": "text", "text": "{\"slug\":\"checkout-incident-a1b2c3\",\"title\":\"Сбой оплаты 14 марта\",\"content\":\"# Сбой оплаты\\n\\nПричина: истёк сертификат шлюза. Чинили 40 минут.\"}" }] }
+    },
+    {
+      "name": "doc_share",
+      "description": "Ссылка",
+      "inputSchema": { "type": "object", "properties": { "slug": { "type": "string" } } },
+      "result": { "content": [{ "type": "text", "text": "{}" }] }
+    }
+  ]
+}

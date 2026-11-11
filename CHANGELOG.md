@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harnessly-app/`: the harnessly app package «Документы» (manifest, `.mcp.json` with the installation's address
+  and platform sign-in, the agent's instructions and skill, a home view, an eval). Kept out of the image.
 - `ARTIFACTS_AUTH=harnessly` (off by default): agents come with app tokens a harnessly hub signs for a person
   (EdDSA, discovery or the hub's well-known JWKS), and see, read and share only the documents the hub allows that
   person (`POST <hub>/api/platform/docs/_rights`, cached up to 10 s). Static tokens and share links keep working.

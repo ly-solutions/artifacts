@@ -1,0 +1,12 @@
+{
+  "prompt": "Почему у нас падала оплата 14 марта? У нас был разбор.",
+  "mocks": { "mcp": { "docs": "fixtures/docs.json" } },
+  "expect": {
+    "tool_used": ["docs.doc_find"],
+    "tool_not_used": ["docs.doc_share"],
+    "final_text": ["сертификат"],
+    "max_tool_calls": 8
+  },
+  "runs": 3,
+  "baseline": true
+}
