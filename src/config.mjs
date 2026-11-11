@@ -33,7 +33,7 @@ export function parseDuration(value, name = 'duration') {
   return Number(match[1]) * unit
 }
 
-export const AUTH_MODES = ['token', 'oidc', 'proxy', 'none']
+export const AUTH_MODES = ['token', 'oidc', 'proxy', 'harnessly', 'none']
 
 const intIn = (raw, fallback, min, max, name) => {
   if (raw === undefined || raw === '') return fallback
@@ -88,6 +88,11 @@ export function loadConfig(env = process.env) {
         allowedGroups: list(env.ARTIFACTS_OIDC_ALLOWED_GROUPS),
         groupsClaim: env.ARTIFACTS_OIDC_GROUPS_CLAIM || 'groups',
         acceptBearer: bool(env.ARTIFACTS_OIDC_ACCEPT_BEARER, false),
+      },
+      harnessly: {
+        issuer: (env.ARTIFACTS_HARNESSLY_ISSUER || '').replace(/\/$/, ''),
+        accessToken: env.ARTIFACTS_HARNESSLY_ACCESS_TOKEN || '',
+        rightsTtl: parseDuration(env.ARTIFACTS_HARNESSLY_RIGHTS_TTL || '10s', 'ARTIFACTS_HARNESSLY_RIGHTS_TTL'),
       },
       proxy: {
         userHeader: (env.ARTIFACTS_PROXY_USER_HEADER || 'X-Forwarded-User').toLowerCase(),
@@ -170,6 +175,12 @@ export function validateConfig(config) {
   if (!(readTtl >= 60 && readTtl <= 86400)) errors.push('ARTIFACTS_READ_LINK_TTL must be between 1m and 24h: read links are meant to be short-lived')
   if (auth.mode === 'oidc') {
     if (!auth.oidc.issuer || !auth.oidc.clientId) errors.push('ARTIFACTS_AUTH=oidc needs ARTIFACTS_OIDC_ISSUER and ARTIFACTS_OIDC_CLIENT_ID')
+  }
+  if (auth.mode === 'harnessly') {
+    if (!/^https?:\/\//.test(auth.harnessly.issuer)) errors.push('ARTIFACTS_AUTH=harnessly needs ARTIFACTS_HARNESSLY_ISSUER, the public URL of the hub')
+    if (auth.harnessly.accessToken.length < 16) errors.push('ARTIFACTS_AUTH=harnessly needs ARTIFACTS_HARNESSLY_ACCESS_TOKEN (at least 16 characters): the service asks the hub for document rights with it')
+    if (!(auth.harnessly.rightsTtl <= 10)) errors.push('ARTIFACTS_HARNESSLY_RIGHTS_TTL must be at most 10s: a revoked right has to stop working quickly')
+    if (auth.tokens.length === 0) warnings.push('ARTIFACTS_AUTH=harnessly without ARTIFACTS_TOKEN: the hub cannot publish documents here')
   }
   if (!['lax', 'strict', 'none'].includes(auth.cookieSameSite)) errors.push('ARTIFACTS_COOKIE_SAMESITE must be lax, strict or none')
   if (auth.cookieSameSite === 'none' && !config.publicUrl.startsWith('https://')) errors.push('ARTIFACTS_COOKIE_SAMESITE=none needs an https ARTIFACTS_PUBLIC_URL (browsers drop SameSite=None cookies without Secure)')

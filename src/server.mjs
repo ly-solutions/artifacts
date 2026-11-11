@@ -8,8 +8,10 @@ import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canShare, canWrite, parseCookies } from './auth/index.mjs'
+import { HubRightsError } from './auth/harnessly.mjs'
 import { parseDuration } from './config.mjs'
 import { unifiedDiff } from './diff.mjs'
+import { createMcpHandler } from './mcp.mjs'
 import { PluginHost, isApiErrorLike, loadPluginModules } from './plugins.mjs'
 import { renderVersion } from './render/doc.mjs'
 import { catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
@@ -170,11 +172,36 @@ export async function createApp(config, { storage, log = createLogger(config.log
 
   const presentFull = (meta) => service.present(meta, { versions: true })
 
+  /** Search as the caller sees the catalog: a hub person gets only the documents the hub lets them read. */
+  async function searchFor(principal, query) {
+    if (!principal.hub) return service.search(query)
+    const limit = query.limit ?? 50
+    const offset = query.offset ?? 0
+    const all = await service.search({ ...query, limit: Number.MAX_SAFE_INTEGER, offset: 0 })
+    const access = await auth.docAccess(principal, all.items.map((item) => item.slug))
+    const visible = all.items.filter((item) => access.get(item.slug).read)
+    const items = visible.slice(offset, offset + limit)
+    const next = offset + items.length
+    return { total: visible.length, offset, limit, nextOffset: next < visible.length ? next : null, items }
+  }
+
+  /** The caller's rights on one document; a hub person who may not read it gets a 404, as if it did not exist. */
+  async function docAccess(principal, slug, { need = 'read' } = {}) {
+    const access = await auth.docAccessOne(principal, slug)
+    if (principal.hub && !access.read) throw new ApiError(404, 'not_found')
+    if (need === 'read' && !access.read) throw new ApiError(403, 'forbidden', { hint: 'this token or account cannot read documents' })
+    if (need === 'write' && !access.write) throw new ApiError(403, 'forbidden', { hint: 'you can read this document but not change it' })
+    if (need === 'share' && !access.share) throw new ApiError(403, 'forbidden', { hint: 'you cannot change sharing of this document' })
+    return access
+  }
+
+  const mcp = createMcpHandler({ config, service, searchFor, docAccess })
+
   // ---- route handlers --------------------------------------------------------
 
-  async function apiSearch(req, res, url) {
+  async function apiSearch(req, res, url, principal) {
     const params = url.searchParams
-    const result = await service.search({
+    const result = await searchFor(principal, {
       q: params.get('q') ?? '',
       tags: params.getAll('tag').flatMap((tag) => normalizeTags(tag)),
       task: params.get('task') ?? undefined,
@@ -256,6 +283,11 @@ export async function createApp(config, { storage, log = createLogger(config.log
 
   /** GET and PUT of /a/{slug}/access and /api/v1/artifacts/{slug}/access. */
   async function accessRoute(req, res, url, slug, principal, method) {
+    if (principal.hub) {
+      const access = await docAccess(principal, slug, { need: method === 'PUT' ? 'share' : 'read' })
+      // From here on the hub person acts with the role their right on this document gives.
+      principal = { ...principal, role: access.write ? 'editor' : 'viewer' }
+    }
     if (method === 'PUT') {
       if (!canShare(principal)) {
         if (principal.role === 'none') return json(res, 401, { error: 'unauthorized', hint: 'send Authorization: Bearer <editor or share token>' }, { 'www-authenticate': 'Bearer' })
@@ -409,7 +441,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     try {
       principal = await auth.authenticate(req)
     } catch (error) {
-      if (error.status === 401) return json(res, 401, { error: 'unauthorized', hint: 'the bearer token is not valid' }, { 'www-authenticate': 'Bearer' })
+      if (error.status === 401) return json(res, 401, { error: 'unauthorized', hint: 'the bearer token is not valid' }, { 'www-authenticate': 'Bearer error="invalid_token"' })
       throw error
     }
 
@@ -419,6 +451,9 @@ export async function createApp(config, { storage, log = createLogger(config.log
       if (matched) return runPluginRoute(req, res, url, principal, matched)
     }
 
+    // ---- MCP (Streamable HTTP, see docs/mcp.md) -------------------------------
+    if (path === '/mcp') return mcp(req, res, principal)
+
     // ---- sign-in -------------------------------------------------------------
     if (path === '/login') {
       const next = safeNext(url.searchParams.get('next'))
@@ -426,7 +461,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
         const { url: target, pending } = await auth.oidc.authorizationRequest(next)
         return redirect(res, target, { 'set-cookie': auth.cookie(OIDC_COOKIE, service.signer.sign('oidc', { ...pending, e: Math.floor(Date.now() / 1000) + 600 }), 600, 'lax') })
       }
-      if (config.auth.mode !== 'token') return redirect(res, next)
+      // harnessly mode signs people in with a token like token mode; agents come with hub app tokens.
+      if (config.auth.mode !== 'token' && config.auth.mode !== 'harnessly') return redirect(res, next)
       if (method === 'GET') return html(res, 200, loginPage({ siteName: config.siteName, mode: 'token', next }))
       if (method === 'POST') {
         const ip = req.socket.remoteAddress ?? 'unknown'
@@ -465,9 +501,12 @@ export async function createApp(config, { storage, log = createLogger(config.log
     // ---- API -----------------------------------------------------------------
     if (path.startsWith('/api/v1/')) {
       const needRead = () => {
+        if (principal.hub) return
         if (!canRead(principal)) throw new ApiError(401, 'unauthorized', { hint: 'send Authorization: Bearer <token>' })
       }
       const needWrite = () => {
+        // Agents publish through the hub, which keeps the rights; a hub app token does not publish here.
+        if (principal.hub) throw new ApiError(403, 'forbidden', { hint: 'publish and delete documents through the hub' })
         needRead()
         if (!canWrite(principal)) throw new ApiError(403, 'forbidden', { hint: 'this token or account can read but not write' })
         checkSameOrigin(req, principal)
@@ -481,15 +520,27 @@ export async function createApp(config, { storage, log = createLogger(config.log
         return json(res, 200, { name: principal.name, role: principal.role, via: principal.via, auth: config.auth.mode })
       }
       if (path === '/api/v1/artifacts') {
-        if (method === 'GET') return needRead(), apiSearch(req, res, url)
+        if (method === 'GET') return needRead(), apiSearch(req, res, url, principal)
         if (method === 'POST') return needWrite(), apiPublish(req, res, principal)
       }
-      if (path === '/api/v1/tags' && method === 'GET') return needRead(), json(res, 200, { tags: await service.tags() })
+      if (path === '/api/v1/tags' && method === 'GET') {
+        if (principal.hub) throw new ApiError(403, 'forbidden', { hint: 'tags of the whole catalog are not available to a hub app token' })
+        return needRead(), json(res, 200, { tags: await service.tags() })
+      }
       const match = /^\/api\/v1\/artifacts\/([^/]+)(\/[a-z]+)?$/.exec(path)
       if (match) {
         const slug = decodeURIComponent(match[1])
         if (!isValidSlug(slug)) throw new ApiError(404, 'not_found')
         const sub = match[2] ?? ''
+        if (principal.hub && sub !== '/access') {
+          // A hub person: the hub decides per document; publishing and deleting stay with the hub.
+          const write = (sub === '' && method === 'PATCH') || sub === '/share'
+          if (sub === '' && method === 'DELETE') throw new ApiError(403, 'forbidden', { hint: 'publish and delete documents through the hub' })
+          await docAccess(principal, slug, { need: sub === '/share' ? 'share' : write ? 'write' : 'read' })
+          if (sub === '' && method === 'PATCH') return apiMeta(req, res, slug, principal)
+          if (sub === '/share' && method === 'POST') return apiShare(req, res, slug)
+          if (sub === '/share' && method === 'DELETE') return json(res, 200, { artifact: service.present((await service.unshare(slug)).meta) })
+        }
         if (sub === '' && method === 'GET') {
           needRead()
           return json(res, 200, { artifact: presentFull((await service.get(slug)).meta) })
@@ -556,13 +607,13 @@ export async function createApp(config, { storage, log = createLogger(config.log
     }
 
     if (path === '/') {
-      if (!canRead(principal)) return deny(req, res, principal, url)
+      if (!canRead(principal) && !principal.hub) return deny(req, res, principal, url)
       const q = url.searchParams.get('q') ?? ''
       const tags = url.searchParams.getAll('tag').flatMap((tag) => normalizeTags(tag))
       const offset = Math.max(Math.floor(Number(url.searchParams.get('offset') ?? 0)) || 0, 0)
-      const results = await service.search({ q, tags, limit: CATALOG_PAGE, offset })
+      const results = await searchFor(principal, { q, tags, limit: CATALOG_PAGE, offset })
       if (url.searchParams.get('partial') === '1') return html(res, 200, resultsList({ ...results, q, tags }))
-      return html(res, 200, catalogPage({ siteName: config.siteName, principal, q, tags, results, allTags: await service.tags() }))
+      return html(res, 200, catalogPage({ siteName: config.siteName, principal, q, tags, results, allTags: principal.hub ? [] : await service.tags() }))
     }
 
     const readerMatch = /^\/(a|embed)\/([a-z0-9][a-z0-9-]*)(\/raw|\/versions|\/diff)?$/.exec(path)
@@ -592,7 +643,13 @@ export async function createApp(config, { storage, log = createLogger(config.log
         }
         return redirect(res, service.readerUrl(slug, target))
       }
-      if (!canRead(principal)) {
+      // A hub person reads only what the hub allows; a document they may not read looks absent.
+      const hubAccess = principal.hub && found ? await auth.docAccessOne(principal, slug) : null
+      if (principal.hub && !hubAccess?.read) {
+        if (sub === '/raw' || sub === '/versions' || sub === '/diff' || !wantsHtml(req)) return json(res, 404, { error: 'not_found' })
+        return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: `There is no artifact “${slug}”.`, principal }))
+      }
+      if (!canRead(principal) && !principal.hub) {
         if (sub === '/raw' || sub === '/versions' || sub === '/diff' || !wantsHtml(req)) return json(res, 401, { error: 'unauthorized' })
         return deny(req, res, principal, url)
       }
@@ -609,7 +666,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       const theme = url.searchParams.get('theme')
       const rawUrl = `/a/${slug}/raw?v=${n}${theme ? `&theme=${encodeURIComponent(theme)}` : ''}`
       const mode = kind === 'embed' ? 'embed' : 'reader'
-      return html(res, 200, readerPage({ siteName: config.siteName, principal, artifact: presentFull(found.meta), n, rawUrl, canEdit: canWrite(principal), mode }), {
+      return html(res, 200, readerPage({ siteName: config.siteName, principal, artifact: presentFull(found.meta), n, rawUrl, canEdit: hubAccess ? false : canWrite(principal), mode }), {
         frameAncestors: mode === 'embed' ? ["'self'", ...ancestors].join(' ') : "'none'",
       })
     }
@@ -627,6 +684,10 @@ export async function createApp(config, { storage, log = createLogger(config.log
       await handle(req, res)
     } catch (error) {
       if (error instanceof ApiError) return json(res, error.status, error.toJSON())
+      if (error instanceof HubRightsError) {
+        log('warn', 'hub rights unavailable', { error: error.message })
+        return json(res, 503, { error: 'rights_unavailable', hint: 'the hub did not say who may read this; retry' }, { 'retry-after': '10' })
+      }
       // The same shape from a plugin package that bundles its own copy of this module.
       if (isApiErrorLike(error)) return json(res, error.status, { error: error.code, ...(error.hint ? { hint: error.hint } : {}), ...(error.problems ? { problems: error.problems } : {}) })
       if (error instanceof HttpError) return json(res, error.status, { error: 'request_error', hint: error.message })
