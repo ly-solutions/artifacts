@@ -169,7 +169,7 @@
           field.value = ''
         })
         .catch(function () {
-          hl.ui && hl.ui.toast && hl.ui.toast('Не получилось отправить в чат', { tone: 'error' })
+          if (hl.ui && hl.ui.toast) hl.ui.toast('Не получилось отправить в чат', { tone: 'error' })
         })
         .then(function () {
           go.disabled = false

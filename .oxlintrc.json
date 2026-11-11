@@ -11,7 +11,8 @@
   "ignorePatterns": [
     "node_modules/**",
     "deploy/**",
-    "coverage/**"
+    "coverage/**",
+    "web/hl/**"
   ],
   "rules": {
     "eqeqeq": "error",
