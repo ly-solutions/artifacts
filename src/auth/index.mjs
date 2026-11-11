@@ -19,7 +19,7 @@
 import { randomBytes } from 'node:crypto'
 
 import { ipInCidrs, parseCidr } from './cidr.mjs'
-import { HubRights, HubTokenVerifier, capabilitiesOf, isAppToken } from './harnessly.mjs'
+import { HubRights, HubTokenVerifier, HubUnavailableError, capabilitiesOf, isAppToken } from './harnessly.mjs'
 import { OidcClient } from './oidc.mjs'
 import { safeEqual } from '../signing.mjs'
 
@@ -93,6 +93,7 @@ export class Authenticator {
           const name = (typeof claims.name === 'string' && claims.name) || email || claims.sub
           return { role: 'member', name, email, sub: claims.sub, hub: true, via: 'bearer' }
         } catch (error) {
+          if (error instanceof HubUnavailableError) throw error
           this.log('info', 'hub app token rejected', { error: error.message })
         }
       }

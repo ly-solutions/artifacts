@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { after, before, beforeEach, describe, it } from 'node:test'
 
 import { loadConfig, validateConfig } from '../src/config.mjs'
-import { HubRights, HubTokenVerifier } from '../src/auth/harnessly.mjs'
+import { HubRights, HubTokenVerifier, HubUnavailableError } from '../src/auth/harnessly.mjs'
 import { TOKEN, startApp } from './helpers/setup.mjs'
 
 const ACCESS_TOKEN = 'hub-rights-token-0123456789'
@@ -323,5 +323,22 @@ describe('harnessly configuration', () => {
     assert.ok(errors.some((e) => e.includes('ARTIFACTS_HARNESSLY_ACCESS_TOKEN')))
     const ok = validateConfig(loadConfig({ ARTIFACTS_STORAGE: 'fs', ARTIFACTS_AUTH: 'harnessly', ARTIFACTS_HARNESSLY_ISSUER: 'https://hub.example', ARTIFACTS_HARNESSLY_ACCESS_TOKEN: ACCESS_TOKEN, ARTIFACTS_TOKEN: TOKEN }))
     assert.deepEqual(ok.errors, [])
+  })
+})
+
+describe('hub down', () => {
+  it('a token that cannot be checked because the hub is down is a HubUnavailableError, not a bad token', async () => {
+    const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
+    const token = `${enc({ alg: 'EdDSA', typ: 'harnessly-app+jwt', kid: 'k1' })}.${enc({ sub: 'u' })}.${Buffer.from('sig').toString('base64url')}`
+    const verifier = new HubTokenVerifier({
+      issuer: 'https://hub.example.com',
+      audience: AUDIENCE,
+      fetchImpl: async () => {
+        throw new TypeError('fetch failed')
+      },
+    })
+    await assert.rejects(verifier.verify(token), HubUnavailableError)
+    const refusing = new HubTokenVerifier({ issuer: 'https://hub.example.com', audience: AUDIENCE, fetchImpl: async () => new Response('', { status: 502 }) })
+    await assert.rejects(refusing.verify(token), HubUnavailableError)
   })
 })
