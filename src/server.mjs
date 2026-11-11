@@ -8,7 +8,7 @@ import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canShare, canWrite, parseCookies } from './auth/index.mjs'
-import { HubRightsError } from './auth/harnessly.mjs'
+import { HubRightsError, HubUnavailableError } from './auth/harnessly.mjs'
 import { parseDuration } from './config.mjs'
 import { unifiedDiff } from './diff.mjs'
 import { createMcpHandler } from './mcp.mjs'
@@ -702,6 +702,10 @@ export async function createApp(config, { storage, log = createLogger(config.log
       await handle(req, res)
     } catch (error) {
       if (error instanceof ApiError) return json(res, error.status, error.toJSON())
+      if (error instanceof HubUnavailableError) {
+        log('warn', 'hub unavailable', { error: error.message })
+        return json(res, 503, { error: 'hub_unavailable', hint: 'the hub did not answer, so the sign-in cannot be checked; retry in a minute' }, { 'retry-after': '30' })
+      }
       if (error instanceof HubRightsError) {
         log('warn', 'hub rights unavailable', { error: error.message })
         return json(res, 503, { error: 'rights_unavailable', hint: 'the hub did not say who may read this; retry' }, { 'retry-after': '10' })

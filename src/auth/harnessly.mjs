@@ -27,6 +27,9 @@ export function isAppToken(token) {
   }
 }
 
+/** The hub's keys could not be read: the token cannot be checked now. A 503 to retry, not a 401. */
+export class HubUnavailableError extends Error {}
+
 export class HubTokenVerifier {
   /** issuer: the hub's public URL; audience: this service's origin. */
   constructor({ issuer, audience, fetchImpl = fetch, now = () => Date.now() }) {
@@ -89,8 +92,16 @@ export class HubTokenVerifier {
     if (header.alg !== 'EdDSA') throw new Error(`unsupported algorithm ${header.alg}`)
     if (header.typ !== APP_TOKEN_TYPE) throw new Error('not a hub app token')
     const find = (keys) => keys.find((key) => (header.kid ? key.kid === header.kid : true) && (!key.use || key.use === 'sig'))
-    let jwk = find(await this.loadKeys())
-    if (!jwk) jwk = find(await this.loadKeys(true))
+    const keysOf = async (force) => {
+      try {
+        return await this.loadKeys(force)
+      } catch (error) {
+        if (error.message.startsWith('hub issuer mismatch')) throw error
+        throw new HubUnavailableError(`the hub's keys could not be read: ${error.message}`)
+      }
+    }
+    let jwk = find(await keysOf(false))
+    if (!jwk) jwk = find(await keysOf(true))
     if (!jwk) throw new Error('no matching key at the hub')
     const key = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, format: 'jwk' })
     if (!verifySignature(null, Buffer.from(`${parts[0]}.${parts[1]}`), key, Buffer.from(parts[2], 'base64url'))) throw new Error('signature invalid')
