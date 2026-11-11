@@ -6,8 +6,9 @@
 | [configuration.md](configuration.md) | every environment variable, auth modes, content policy |
 | [api.md](api.md) | HTTP API, pages, webhooks, compatibility routes |
 | [architecture.md](architecture.md) | components, request paths, design decisions, limits |
+| [mcp.md](mcp.md) | the MCP endpoint `/mcp` and its tools for agents |
 | [plugins.md](plugins.md) | plugin API: widgets, routes, publish and read hooks, events; an example plugin |
 | [storage.md](storage.md) | drivers, bucket layout, consistency, backups, importing from git |
-| [integrations/harnessly.md](integrations/harnessly.md) | embedding the reader, publishing from agent tabs, linking to conversations |
+| [integrations/harnessly.md](integrations/harnessly.md) | embedding the reader, publishing from agent tabs, linking to conversations, hub app tokens and rights |
 | [../skills/README.md](../skills/README.md) | the agent skill and how to install it |
 | [../deploy/helm/artifacts/README.md](../deploy/helm/artifacts/README.md) | Helm chart values |

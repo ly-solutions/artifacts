@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ARTIFACTS_AUTH=harnessly` (off by default): agents come with app tokens a harnessly hub signs for a person
+  (EdDSA, discovery or the hub's well-known JWKS), and see, read and share only the documents the hub allows that
+  person (`POST <hub>/api/platform/docs/_rights`, cached up to 10 s). Static tokens and share links keep working.
+  See docs/integrations/harnessly.md, section 7.
+- MCP endpoint `/mcp` (Streamable HTTP) with `doc_find`, `doc_show`, `doc_versions` and `doc_share`. There is no
+  publishing tool: in harnessly agents publish through the hub. See docs/mcp.md.
+
 ### Fixed
 
 - Lost versions on S3-compatible stores whose preconditions are not atomic under concurrency (seen on Selectel

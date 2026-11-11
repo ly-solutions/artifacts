@@ -240,6 +240,7 @@ revokes every link. Only `public` is read from the body. Needs an editor or a sh
 | `/s/{token}` | Shared, read-only reader; `/s/{token}/raw` the document. Takes share links and short-lived read links (`readLink` from `/access`). Refusals are indistinguishable 404s. |
 | `/login`, `/logout`, `/auth/callback` | Sign-in for `token` and `oidc` modes. |
 | `/healthz`, `/readyz` | Liveness, and readiness including a storage check. |
+| `POST /mcp` | MCP endpoint for agents (Streamable HTTP): find, read, versions, share; see [mcp.md](mcp.md). |
 
 Documents served by `/raw` carry `Content-Security-Policy: sandbox allow-scripts allow-popups …` without
 `allow-same-origin`: their scripts run in an opaque origin, cannot read cookies or call the API, and cannot

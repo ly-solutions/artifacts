@@ -6,6 +6,8 @@
  *   oidc   people sign in with any OpenID Connect provider; agents keep using bearer tokens
  *   proxy  an authenticating reverse proxy (oauth2-proxy, Pomerium, Authelia, a mesh) sets a user header;
  *          trusted only from ARTIFACTS_PROXY_TRUSTED_CIDRS
+ *   harnessly  token mode, plus app tokens signed by a harnessly hub: such a caller is a person (`sub`)
+ *          whose rights on each document come from the hub (role `member`, see hubRights)
  *   none   no authentication at all; for a laptop
  *
  * Roles: `editor` publishes and changes metadata and sharing; `viewer` reads; `sharer` (a service
@@ -17,6 +19,7 @@
 import { randomBytes } from 'node:crypto'
 
 import { ipInCidrs, parseCidr } from './cidr.mjs'
+import { HubRights, HubTokenVerifier, capabilitiesOf, isAppToken } from './harnessly.mjs'
 import { OidcClient } from './oidc.mjs'
 import { safeEqual } from '../signing.mjs'
 
@@ -49,6 +52,14 @@ export class Authenticator {
     this.secureCookies = config.publicUrl.startsWith('https://')
     this.trusted = this.auth.proxy.trustedCidrs.map(parseCidr)
     this.oidc = this.auth.mode === 'oidc' ? new OidcClient({ ...this.auth.oidc, fetchImpl }) : null
+    if (this.auth.mode === 'harnessly') {
+      const { issuer, accessToken, rightsTtl } = this.auth.harnessly
+      this.hub = new HubTokenVerifier({ issuer, audience: new URL(config.publicUrl).origin, fetchImpl })
+      this.hubRights = new HubRights({ issuer, accessToken, ttlMs: rightsTtl * 1000, fetchImpl })
+    } else {
+      this.hub = null
+      this.hubRights = null
+    }
     this.attempts = new Map()
   }
 
@@ -75,6 +86,16 @@ export class Authenticator {
     if (bearer) {
       const byToken = this.staticToken(bearer)
       if (byToken) return byToken
+      if (this.hub && isAppToken(bearer)) {
+        try {
+          const claims = await this.hub.verify(bearer)
+          const email = typeof claims.email === 'string' ? claims.email : undefined
+          const name = (typeof claims.name === 'string' && claims.name) || email || claims.sub
+          return { role: 'member', name, email, sub: claims.sub, hub: true, via: 'bearer' }
+        } catch (error) {
+          this.log('info', 'hub app token rejected', { error: error.message })
+        }
+      }
       if (this.oidc && this.auth.oidc.acceptBearer && bearer.split('.').length === 3) {
         try {
           const claims = await this.oidc.verifyJwt(bearer, { audience: this.auth.oidc.clientId })
@@ -111,6 +132,23 @@ export class Authenticator {
       if (session) return { role: session.r, name: session.n, email: session.m, via: 'session' }
     }
     return ANONYMOUS
+  }
+
+  /**
+   * What the caller may do with each document: { read, write, share } per slug. A hub person gets the
+   * hub's answer (throws HubRightsError when the hub does not answer); everyone else, their role.
+   */
+  async docAccess(principal, slugs) {
+    if (principal.hub) {
+      const rights = await this.hubRights.of(principal.sub, slugs)
+      return new Map(slugs.map((slug) => [slug, capabilitiesOf(rights.get(slug) ?? 'none')]))
+    }
+    const same = { read: canRead(principal), write: canWrite(principal), share: canShare(principal), right: null }
+    return new Map(slugs.map((slug) => [slug, same]))
+  }
+
+  async docAccessOne(principal, slug) {
+    return (await this.docAccess(principal, [slug])).get(slug)
   }
 
   personFromClaims(claims) {

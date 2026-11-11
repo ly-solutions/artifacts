@@ -46,7 +46,7 @@ See [storage.md](storage.md) for the layout.
 
 | Variable | Default | Description |
 |---|---|---|
-| `ARTIFACTS_AUTH` | `token` | `token`, `oidc`, `proxy` or `none`. See [auth](#authentication-modes). |
+| `ARTIFACTS_AUTH` | `token` | `token`, `oidc`, `proxy`, `harnessly` or `none`. See [auth](#authentication-modes). |
 | `ARTIFACTS_TOKEN` | — | **Required in token mode.** Editor bearer token(s): publish, edit metadata, share. At least 16 characters; comma-separate several to rotate. Works in every mode, so agents can publish while people use OIDC or a proxy. |
 | `ARTIFACTS_READ_TOKEN` | — | Viewer bearer token(s): read and search only. |
 | `ARTIFACTS_SHARE_TOKEN` | — | Sharer bearer token(s): only turn sharing of a document on and off (`/access`, `/share`), no reading. For a service that sits behind a "Share" button and should not hold a token that can read or publish. Not accepted on `/login`. |
@@ -65,6 +65,9 @@ See [storage.md](storage.md) for the layout.
 | `ARTIFACTS_OIDC_ALLOWED_GROUPS` | empty | Only members of these groups may sign in. |
 | `ARTIFACTS_OIDC_GROUPS_CLAIM` | `groups` | Claim that carries group names. |
 | `ARTIFACTS_OIDC_ACCEPT_BEARER` | `false` | Also accept provider-issued JWTs (audience = client id) as bearer tokens on the API. |
+| `ARTIFACTS_HARNESSLY_ISSUER` | — | **Required in harnessly mode.** Public URL of the harnessly hub, exactly as the `iss` of its app tokens. Keys come from its OpenID discovery, or from `<issuer>/.well-known/jwks.json` when it has none. The tokens' audience must be the origin of `ARTIFACTS_PUBLIC_URL`. |
+| `ARTIFACTS_HARNESSLY_ACCESS_TOKEN` | — | **Required in harnessly mode.** Service token for the hub's rights endpoint (`POST <issuer>/api/platform/docs/_rights`); the hub holds the same value. At least 16 characters. |
+| `ARTIFACTS_HARNESSLY_RIGHTS_TTL` | `10s` | How long the hub's answer about a person's rights is cached; at most 10s. |
 | `ARTIFACTS_PROXY_USER_HEADER` | `X-Forwarded-User` | Header with the user name, set by the authenticating proxy. |
 | `ARTIFACTS_PROXY_EMAIL_HEADER` | `X-Forwarded-Email` | Header with the email. |
 | `ARTIFACTS_PROXY_GROUPS_HEADER` | `X-Forwarded-Groups` | Header with groups (comma or space separated). |
@@ -78,6 +81,9 @@ See [storage.md](storage.md) for the layout.
   Entra ID, GitLab…). Agents keep using `ARTIFACTS_TOKEN`, or provider JWTs with `ARTIFACTS_OIDC_ACCEPT_BEARER`.
 - **proxy**: an authenticating proxy in front (oauth2-proxy, Pomerium, Authelia, Teleport application access,
   a service mesh) sets the user headers. Restrict `ARTIFACTS_PROXY_TRUSTED_CIDRS` to the proxy's addresses.
+- **harnessly**: token mode, plus app tokens that a [harnessly](integrations/harnessly.md#7-signing-in-with-a-hub-app-token)
+  hub signs for the person an agent works for. Such a caller sees, reads and shares only the documents the hub
+  allows that person, through the API and the [MCP endpoint](mcp.md); publishing stays with the hub.
 - **none**: no authentication. Only for a single-user laptop; the server logs a warning at start.
 
 Share links work in every mode: they are signed with `ARTIFACTS_SECRET` and open one artifact read-only.

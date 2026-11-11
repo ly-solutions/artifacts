@@ -181,3 +181,52 @@ On the artifacts side, the whole integration is configuration: `ARTIFACTS_FRAME_
 
 The sibling project [ly-solutions/boards](https://github.com/ly-solutions/boards) (whiteboards agents can read and
 draw) follows the same pattern for its own pane.
+
+## 7. Signing in with a hub app token
+
+With `ARTIFACTS_AUTH=harnessly` the hub is the identity and the permission source for agents. It is off by
+default; static tokens, share links and `?k=` links keep working in this mode.
+
+```
+ machine ── Bearer <hub app token> ──▶ artifacts /mcp, /api/v1/…   (an agent acts for a person)
+ artifacts ── JWKS (discovery) ──────▶ hub /.well-known/…           (checks the signature)
+ artifacts ── Bearer <rights token> ─▶ hub POST /api/platform/docs/_rights  (who may read what)
+ agent ── doc.publish ───────────────▶ hub ── ARTIFACTS_TOKEN ──▶ artifacts  (publishing: one road, through the hub)
+```
+
+**The token.** A JWT signed with Ed25519 (`alg: EdDSA`, `typ: harnessly-app+jwt`, `kid`), living a few minutes.
+artifacts accepts it when the signature matches a key of the hub, `iss` equals `ARTIFACTS_HARNESSLY_ISSUER`,
+`aud` is the origin of `ARTIFACTS_PUBLIC_URL`, and `exp`/`nbf` hold (60 s of clock skew). The person is `sub`;
+`name` and `email` are for display. Keys are found by OpenID discovery
+(`<issuer>/.well-known/openid-configuration` → `jwks_uri`), or at `<issuer>/.well-known/jwks.json` when the hub
+has no discovery; they are cached for 10 minutes and fetched again once for an unknown `kid`. Any failure answers
+`401` with `WWW-Authenticate: Bearer error="invalid_token"`: the machine takes a fresh token and retries once.
+
+**Rights.** The hub keeps them. For every document a hub person touches, artifacts asks
+`POST <issuer>/api/platform/docs/_rights` with `Authorization: Bearer <ARTIFACTS_HARNESSLY_ACCESS_TOKEN>` and
+`{"sub": "…", "slugs": ["…"]}` (up to 200 per call), and gets `{"rights": {"slug": "none|view|comment|edit"}}`.
+Answers are cached for `ARTIFACTS_HARNESSLY_RIGHTS_TTL` (10 s at most).
+
+| Right | Here |
+|---|---|
+| `none` (or unknown) | the document does not exist for the person: not listed, `404` |
+| `view`, `comment` | listed, read, versions, diff; comments live in the hub |
+| `edit` | also metadata (`PATCH`) and sharing (`/share`, `/access`, `doc_share`) |
+
+A hub app token never publishes or deletes (`403`): agents publish through the hub, which writes with
+`ARTIFACTS_TOKEN` and records the rights. Tags of the whole catalog are not available to it. When the hub does not
+answer the rights request, the API answers `503 rights_unavailable` and MCP tools return an error; nothing is
+shown without an answer.
+
+**Setup.**
+
+```sh
+ARTIFACTS_AUTH=harnessly
+ARTIFACTS_PUBLIC_URL=https://docs.example.com          # the audience of the hub's tokens
+ARTIFACTS_HARNESSLY_ISSUER=https://hub.example.com
+ARTIFACTS_HARNESSLY_ACCESS_TOKEN=<same value as the hub's HUB_ARTIFACTS_ACCESS_TOKEN>
+ARTIFACTS_TOKEN=<editor token the hub publishes with>
+```
+
+The tools agents get are described in [mcp.md](../mcp.md).
+
