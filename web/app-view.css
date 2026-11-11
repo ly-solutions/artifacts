@@ -1,0 +1,199 @@
+/* The documents' app view in harnessly, on the --t-* tokens harnessly sets for its theme (each with a default). */
+:root {
+  --t-bg: #ffffff;
+  --t-surface: #f6f6f7;
+  --t-surface-hover: #ececee;
+  --t-text: #17171a;
+  --t-text-secondary: #4a4a52;
+  --t-text-muted: #76767f;
+  --t-border: #e2e2e6;
+  --t-accent: #3b5bdb;
+}
+html[data-theme='dark'] {
+  --t-bg: #141416;
+  --t-surface: #1c1c1f;
+  --t-surface-hover: #26262a;
+  --t-text: #ececf0;
+  --t-text-secondary: #b4b4bc;
+  --t-text-muted: #8a8a94;
+  --t-border: #2e2e33;
+  --t-accent: #748ffc;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--t-bg);
+  color: var(--t-text);
+}
+.dv {
+  box-sizing: border-box;
+  min-height: 100%;
+}
+.dv *,
+.dv *::before,
+.dv *::after {
+  box-sizing: border-box;
+}
+
+/* An open document: the whole frame. */
+.dv--doc {
+  height: 100%;
+}
+.dv__content {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Home. */
+.dv--home {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 24px 48px;
+}
+.dv__head {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto 32px;
+}
+.dv__title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 650;
+  text-align: center;
+}
+.dv__ask {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 8px;
+  border: 1px solid var(--t-border);
+  border-radius: 16px;
+  background: var(--t-surface);
+}
+.dv__field {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+}
+.dv__field:focus {
+  outline: none;
+}
+.dv__ask:focus-within {
+  border-color: var(--t-accent);
+}
+.dv__go {
+  flex: none;
+}
+.dv__starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.dv__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.dv__tabs {
+  display: inline-flex;
+}
+.dv__tab {
+  border: 0;
+  background: transparent;
+  color: var(--t-text-secondary);
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dv__tab[aria-selected='true'] {
+  background: var(--t-bg);
+  color: var(--t-text);
+  font-weight: 600;
+}
+.dv__search {
+  flex: 0 1 280px;
+  min-width: 0;
+}
+.dv__shelf {
+  margin-bottom: 28px;
+}
+.dv__shelf-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.dv__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.dv__card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  min-height: 120px;
+  padding: 14px 16px;
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+  background: var(--t-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease-out;
+}
+.dv__card:hover,
+.dv__card:focus-visible {
+  border-color: var(--t-accent);
+}
+.dv__desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 13px;
+}
+.dv__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.dv__meta {
+  margin-top: auto;
+  font-size: 12px;
+}
+.dv__fail {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .dv--home {
+    padding: 24px 16px 32px;
+  }
+  .dv__title {
+    font-size: 22px;
+  }
+  .dv__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .dv__search {
+    flex: 1 1 100%;
+  }
+}

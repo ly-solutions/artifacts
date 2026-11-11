@@ -209,7 +209,7 @@ describe('harnessly mode', () => {
       assert.equal(init.data.result.protocolVersion, '2025-06-18')
       assert.match(init.data.result.instructions, /through the harnessly hub/)
       const list = await mcp(hub.token(), 'tools/list', {})
-      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_share'])
+      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_open', 'doc_share'])
     })
 
     it('acknowledges notifications with 202', async () => {

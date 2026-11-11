@@ -2,18 +2,52 @@
   "id": "harnessly.docs",
   "name": "Документы",
   "description": "Каталог документов команды: агент находит, читает, сравнивает версии и делится ссылкой; публикует через хаб",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "harnessly": ">=0.16.68",
   "trust": "sandboxed",
-  "targets": ["app", "chat"],
-  "activation": { "on": ["manual"], "openView": "home" },
-  "permissions": [],
+  "targets": [
+    "app",
+    "pane",
+    "chat"
+  ],
+  "activation": {
+    "on": [
+      "manual"
+    ],
+    "openView": "docs"
+  },
+  "permissions": [
+    "chat.prompt",
+    "pane.open"
+  ],
   "agent": {
     "instructions": "instructions.md",
-    "skills": ["documents"],
+    "skills": [
+      "documents"
+    ],
     "tools": {}
   },
   "views": [
-    { "id": "home", "title": "Документы", "entry": "ui/index.html", "targets": ["app"] }
-  ]
+    {
+      "id": "docs",
+      "title": "Документы",
+      "entry": "${install:artifactsUrl}/app",
+      "targets": [
+        "app"
+      ]
+    },
+    {
+      "id": "home",
+      "title": "Последние документы",
+      "entry": "ui/index.html",
+      "targets": [
+        "pane"
+      ]
+    }
+  ],
+  "network": {
+    "frames": [
+      "${install:artifactsUrl}"
+    ]
+  }
 }
