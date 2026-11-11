@@ -55,3 +55,17 @@ export function safeEqual(provided, expected) {
   const b = createHmac('sha256', 'cmp').update(String(expected ?? '')).digest()
   return expected !== undefined && expected !== '' && timingSafeEqual(a, b)
 }
+
+/** How long the app view's ticket to a document's content lives: the view asks again when it opens the document. */
+export const VIEW_TICKET_SECONDS = 300
+
+/** A ticket for the app view to show one document's content (`/a/<slug>/raw?t=`), issued to a reader of it. */
+export function issueViewTicket(signer, slug, now = Date.now()) {
+  return signer.sign('view', { s: slug, e: Math.floor(now / 1000) + VIEW_TICKET_SECONDS })
+}
+
+/** Whether a view ticket is this document's and alive. */
+export function viewTicketValid(signer, token, slug, now = Date.now()) {
+  const payload = signer.verify('view', token, now)
+  return Boolean(payload && payload.s === slug && typeof payload.e === 'number')
+}

@@ -14,7 +14,8 @@ import { unifiedDiff } from './diff.mjs'
 import { createMcpHandler } from './mcp.mjs'
 import { PluginHost, isApiErrorLike, loadPluginModules } from './plugins.mjs'
 import { renderVersion } from './render/doc.mjs'
-import { catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
+import { issueViewTicket, viewTicketValid } from './signing.mjs'
+import { appViewPage, catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
 import { ApiError, ArtifactService } from './service.mjs'
 import { isValidSlug, normalizeTags } from './text.mjs'
 
@@ -200,7 +201,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     return access
   }
 
-  const mcp = createMcpHandler({ config, service, searchFor, docAccess })
+  const mcp = createMcpHandler({ config, service, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug) })
 
   // ---- route handlers --------------------------------------------------------
 
@@ -426,6 +427,11 @@ export async function createApp(config, { storage, log = createLogger(config.log
     if (path.startsWith('/static/')) return serveStatic(res, path.slice('/static/'.length))
     if (path === '/favicon.svg' || path === '/favicon.ico') return serveStatic(res, 'favicon.svg')
     if (path === '/robots.txt') return send(res, 200, 'User-agent: *\nDisallow: /\n', { 'content-type': 'text/plain' })
+    // The app view for harnessly: a page with no data of its own (its data comes through the app's MCP tools).
+    if (path === '/app' && method === 'GET') {
+      if (!config.appView.enabled) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: 'There is nothing at this address.', principal: ANONYMOUS }))
+      return html(res, 200, appViewPage({ siteName: config.siteName }), { frameAncestors: ancestors.length ? ancestors.join(' ') : "'none'" })
+    }
 
     if (path.startsWith('/api/') && cors(req, res) && method === 'OPTIONS') return send(res, 204, '')
 
@@ -626,6 +632,13 @@ export async function createApp(config, { storage, log = createLogger(config.log
       const [, kind, slug, sub] = readerMatch
       const found = await service.store.getManifest(slug)
       const legacyKey = url.searchParams.get('k')
+      // The app view's ticket (doc_open): this document's content, for a few minutes, in the view's frame.
+      const ticket = kind === 'a' && sub === '/raw' && config.appView.enabled ? url.searchParams.get('t') : null
+      if (ticket && found) {
+        const granted = viewTicketValid(service.signer, ticket, slug)
+        if (!granted) return json(res, 401, { error: 'unauthorized', hint: 'the view ticket is wrong or expired' })
+        return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), shared: true })
+      }
       // Links of the previous system (`/a/<slug>?k=<key>`) keep working while the document stays shared.
       if (kind === 'a' && legacyKey && found && (sub === undefined || sub === '/raw') && service.legacyKeyMatches(found.meta, legacyKey)) {
         if (sub === '/raw') return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download'), shared: true })

@@ -68,6 +68,18 @@ export const TOOLS = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: 'doc_open',
+    title: 'Open a document in the app view',
+    description: 'The address of a document\'s content for the harnessly app view, good for a few minutes. Needs the right to read the document; only where the app view is on.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: slugProp, theme: { type: 'string', enum: ['light', 'dark'] } },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'doc_share',
     title: 'Share a document',
     description: 'Open a document by link (public: true, the default) and get the link, or close it and revoke every link (public: false). Needs the right to edit the document.',
@@ -89,7 +101,7 @@ class ToolError extends Error {}
 
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } })
 
-export function createMcpHandler({ config, service, searchFor, docAccess }) {
+export function createMcpHandler({ config, service, searchFor, docAccess, viewTicket }) {
   const publicOrigin = new URL(config.publicUrl).origin
 
   const write = (res, status, body, headers = {}) => {
@@ -119,6 +131,7 @@ export function createMcpHandler({ config, service, searchFor, docAccess }) {
         updatedAt: item.updatedAt,
         versions: item.versionCount,
         url: item.viewUrl,
+        mine: Boolean(item.author && (item.author === principal.name || (principal.email && item.author === principal.email))),
         ...(item.snippet ? { snippet: item.snippet } : {}),
       }))
       return { total: result.total, nextOffset: result.nextOffset, items }
@@ -153,6 +166,21 @@ export function createMcpHandler({ config, service, searchFor, docAccess }) {
         format: as,
         ...(truncated ? { truncated: true } : {}),
         content: truncated ? body.slice(0, MAX_CONTENT_CHARS) : body,
+      }
+    },
+
+    async doc_open(principal, args) {
+      if (!config.appView?.enabled || !viewTicket) throw new ToolError('the app view is off on this server')
+      const slug = slugOf(args)
+      await docAccess(principal, slug)
+      const { meta } = await service.get(slug)
+      const artifact = service.present(meta)
+      const theme = args.theme === 'dark' || args.theme === 'light' ? `&theme=${args.theme}` : ''
+      return {
+        slug,
+        title: artifact.title,
+        url: artifact.viewUrl,
+        contentUrl: `/a/${slug}/raw?t=${encodeURIComponent(viewTicket(slug))}${theme}`,
       }
     },
 

@@ -281,3 +281,28 @@ export function errorPage({ siteName, status, title, message, principal }) {
   const body = `<main class="error-page"><p class="code">${status}</p><h1>${e(title)}</h1><p>${e(message)}</p><a class="button" href="/">Back to the catalog</a></main>`
   return layout({ title: `${title} · ${siteName}`, body, siteName, principal, bodyClass: 'page-error' })
 }
+
+/**
+ * The app view for harnessly (`/app`, ARTIFACTS_APP_VIEW=on): the bridge first (it takes the one-time nonce from the
+ * address), then the SDK and the view. The view draws the home (the field, the library) or one document's content.
+ */
+export function appViewPage({ siteName }) {
+  return `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${e(siteName)}</title>
+<script src="/static/hl/bridge-shim.js"></script>
+<link rel="stylesheet" href="/static/hl/hl-ui.css">
+<link rel="stylesheet" href="/static/app-view.css">
+</head>
+<body class="hl-body">
+<div id="app" class="dv" aria-busy="true"></div>
+<script src="/static/hl/app-sdk.classic.js"></script>
+<script src="/static/app-view.js"></script>
+</body>
+</html>
+`
+}

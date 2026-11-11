@@ -110,6 +110,10 @@ export function loadConfig(env = process.env) {
       url: env.ARTIFACTS_READER_URL || '',
       redirect: (env.ARTIFACTS_READER_REDIRECT || 'anonymous').toLowerCase(),
     },
+    // The app view for harnessly (`/app`): off by default. The pages that may frame it are the embed list.
+    appView: {
+      enabled: bool(env.ARTIFACTS_APP_VIEW, false),
+    },
     embed: {
       frameAncestors: list(env.ARTIFACTS_FRAME_ANCESTORS),
       corsOrigins: list(env.ARTIFACTS_CORS_ORIGINS),
