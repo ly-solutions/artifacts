@@ -14,11 +14,14 @@ JSON-RPC request with a JSON body and opens no server-sent stream (`GET /mcp` is
 | Caller | Documents |
 |---|---|
 | hub app token (`ARTIFACTS_AUTH=harnessly`) | only those the hub allows the person (`view`, `comment`, `edit`); see [the harnessly integration](integrations/harnessly.md#7-signing-in-with-a-hub-app-token) |
-| editor or viewer token, OIDC bearer, session | every document, by role |
-| no token, share token | `401` |
+| editor or viewer token, OIDC bearer | every document, by role |
+| no token, share token, browser session cookie | `401` |
 
-A request with an `Origin` header from a site other than this server (or one in `ARTIFACTS_CORS_ORIGINS`) is
+Requests are JSON (`Content-Type: application/json`, otherwise `415`); a batch holds at most 20 messages, run
+one after another. A request with an `Origin` header from a site other than this server (or one in `ARTIFACTS_CORS_ORIGINS`) is
 refused, so a web page cannot drive the tools with a visitor's credentials.
+
+For a hub person, `doc_find` looks among the best 2000 matches of the query; narrow the query to reach further.
 
 ## Tools
 
