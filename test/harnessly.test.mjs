@@ -263,6 +263,22 @@ describe('harnessly mode', () => {
       assert.equal(response.status, 403)
     })
 
+    it('takes bearer tokens only, not a browser session', async () => {
+      const login = await fetch(`${app.base}/login`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `token=${TOKEN}&next=/` })
+      const cookie = login.headers.get('set-cookie').split(';')[0]
+      const response = await app.request('POST', '/mcp', { token: null, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' }, headers: { cookie } })
+      assert.equal(response.status, 401)
+    })
+
+    it('wants a JSON body and small batches', async () => {
+      const plain = await app.request('POST', '/mcp', { token: hub.token(), body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }), headers: { 'content-type': 'text/plain' } })
+      assert.equal(plain.status, 415)
+      const many = Array.from({ length: 21 }, (_, id) => ({ jsonrpc: '2.0', id, method: 'ping' }))
+      assert.equal((await app.request('POST', '/mcp', { token: hub.token(), body: many })).status, 400)
+      const few = await app.request('POST', '/mcp', { token: hub.token(), body: many.slice(0, 3) })
+      assert.equal(few.data.length, 3)
+    })
+
     it('serves static tokens with every document', async () => {
       const result = await call(TOKEN, 'doc_find', { query: 'roadmap' })
       assert.equal(result.structuredContent.items.length, 4)

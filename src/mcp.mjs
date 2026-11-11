@@ -15,6 +15,7 @@ import { htmlToText, isValidSlug, normalizeTags } from './text.mjs'
 
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 const MAX_BODY = 1024 * 1024
+const MAX_BATCH = 20
 const MAX_CONTENT_CHARS = 200_000
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
@@ -230,9 +231,14 @@ export function createMcpHandler({ config, service, searchFor, docAccess }) {
     const origin = req.headers.origin
     if (origin && origin !== publicOrigin && !config.embed.corsOrigins.includes(origin)) return write(res, 403, rpcError(null, -32600, 'origin not allowed'))
     if (req.method !== 'POST') return write(res, 405, rpcError(null, -32600, 'POST JSON-RPC messages to this endpoint'), { allow: 'POST' })
+    // Bearer tokens only: a browser session cookie would let another page act through a signed-in person.
+    if (principal.via !== 'bearer' && principal.via !== 'none') {
+      return write(res, 401, rpcError(null, -32001, 'unauthorized: send Authorization: Bearer <token>'), { 'www-authenticate': 'Bearer' })
+    }
     if (!principal.hub && !canRead(principal)) {
       return write(res, 401, rpcError(null, -32001, 'unauthorized: send Authorization: Bearer <token>'), { 'www-authenticate': 'Bearer' })
     }
+    if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) return write(res, 415, rpcError(null, -32600, 'send Content-Type: application/json'))
     let raw = ''
     let size = 0
     for await (const chunk of req) {
@@ -247,7 +253,12 @@ export function createMcpHandler({ config, service, searchFor, docAccess }) {
       return write(res, 400, rpcError(null, -32700, 'parse error'))
     }
     if (Array.isArray(message)) {
-      const replies = (await Promise.all(message.map((one) => dispatch(principal, one)))).filter(Boolean)
+      if (message.length > MAX_BATCH) return write(res, 400, rpcError(null, -32600, `at most ${MAX_BATCH} messages in a batch`))
+      const replies = []
+      for (const one of message) {
+        const reply = await dispatch(principal, one)
+        if (reply) replies.push(reply)
+      }
       return replies.length ? write(res, 200, replies) : write(res, 202)
     }
     const reply = await dispatch(principal, message)

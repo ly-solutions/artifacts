@@ -73,6 +73,8 @@ async function readJson(req, limit) {
  * Builds the HTTP server. `plugins`: already imported plugin modules or plugin objects; when omitted,
  * the modules named in ARTIFACTS_PLUGINS are imported.
  */
+const HUB_SEARCH_SCAN = 2000
+
 export async function createApp(config, { storage, log = createLogger(config.log), fetchImpl = fetch, plugins } = {}) {
   const host = new PluginHost({ log, widgetTimeoutMs: (config.plugins?.widgetTimeout ?? 5) * 1000 })
   const service = await new ArtifactService({ storage, config, log, fetchImpl, plugins: host }).init()
@@ -172,12 +174,15 @@ export async function createApp(config, { storage, log = createLogger(config.log
 
   const presentFull = (meta) => service.present(meta, { versions: true })
 
-  /** Search as the caller sees the catalog: a hub person gets only the documents the hub lets them read. */
+  /**
+   * Search as the caller sees the catalog: a hub person gets only the documents the hub lets them read,
+   * among the best HUB_SEARCH_SCAN matches (a bounded number of rights requests per search).
+   */
   async function searchFor(principal, query) {
     if (!principal.hub) return service.search(query)
     const limit = query.limit ?? 50
     const offset = query.offset ?? 0
-    const all = await service.search({ ...query, limit: Number.MAX_SAFE_INTEGER, offset: 0 })
+    const all = await service.search({ ...query, limit: HUB_SEARCH_SCAN, offset: 0 })
     const access = await auth.docAccess(principal, all.items.map((item) => item.slug))
     const visible = all.items.filter((item) => access.get(item.slug).read)
     const items = visible.slice(offset, offset + limit)
