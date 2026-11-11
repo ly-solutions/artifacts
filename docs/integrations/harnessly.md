@@ -230,3 +230,8 @@ ARTIFACTS_TOKEN=<editor token the hub publishes with>
 
 The tools agents get are described in [mcp.md](../mcp.md).
 
+
+**The app package.** [`harnessly-app/`](../../harnessly-app/README.md) is the ready harnessly app «Документы»: its
+`.mcp.json` names this service as `${install:artifactsUrl}/mcp` with `auth: platform`, so the hub fills in its
+`HUB_ARTIFACTS_PUBLIC_URL` (or `HUB_ARTIFACTS_URL`) when an organization admin adds the folder as an «Приложение»
+item of the environment. Without that address the app is not shown.
