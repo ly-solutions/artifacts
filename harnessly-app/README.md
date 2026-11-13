@@ -5,10 +5,10 @@ shares documents with the MCP tools of [`/mcp`](../docs/mcp.md) (`doc_find`, `do
 `doc_share`), and the person gets «Документы» in «Приложения» with the latest documents they may read. Publishing
 stays with the hub, which owns the rights.
 
-- `harnessly/app.json`: the manifest (`trust: sandboxed`, targets `app` and `chat`).
+- `harnessly/app.json`: the manifest (`trust: sandboxed`, targets `app`, `pane` and `chat`; one view, the service's own `/app`).
 - `.mcp.json`: the `docs` server, `${install:artifactsUrl}/mcp`, signed in with the platform's token (`auth: platform`).
 - `instructions.md`, `skills/documents/`: how the agent works with documents (in Russian, the product's language).
-- `ui/`: the app's home; `evals/`: cases for `harnessly app eval`.
+- `evals/`: cases for `harnessly app eval`. There is no `ui/`: the one view is the service's own `/app`, as the app and in the pane.
 
 ## Put it into an organization
 

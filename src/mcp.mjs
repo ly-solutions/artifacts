@@ -68,6 +68,13 @@ export const TOOLS = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: 'doc_signin',
+    title: 'Sign the app view in',
+    description: 'For the app view only, not for an agent: a one-time pass (a minute) that signs the person of the token in to the documents site inside the view, so the view reads its catalog and opens documents by itself.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'doc_open',
     title: 'Open a document in the app view',
     description: 'The address of a document\'s content for the harnessly app view, good for a few minutes. Needs the right to read the document; only where the app view is on.',
@@ -101,7 +108,7 @@ class ToolError extends Error {}
 
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } })
 
-export function createMcpHandler({ config, service, searchFor, docAccess, viewTicket }) {
+export function createMcpHandler({ config, service, searchFor, docAccess, viewTicket, enterPass }) {
   const publicOrigin = new URL(config.publicUrl).origin
 
   const write = (res, status, body, headers = {}) => {
@@ -182,6 +189,12 @@ export function createMcpHandler({ config, service, searchFor, docAccess, viewTi
         url: artifact.viewUrl,
         contentUrl: `/a/${slug}/raw?t=${encodeURIComponent(viewTicket(slug))}${theme}`,
       }
+    },
+
+    async doc_signin(principal) {
+      if (!config.appView?.enabled || !enterPass) throw new ToolError('the app view is off on this server')
+      if (!principal.hub || !principal.sub) throw new ToolError('sign-in needs a harnessly app token: it names the person')
+      return { pass: enterPass(principal) }
     },
 
     async doc_versions(principal, args) {

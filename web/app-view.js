@@ -1,8 +1,8 @@
-// The documents' app view in harnessly (`/app`, render/ui.mjs appViewPage). With no object it is the home: a field
-// whose text goes to the agent in the chat beside, then the library «All · Mine · Shared» with shelves by tag and a
-// search. With an object (`hl.context.data.object`, a document's slug) it is the document itself: its content in a
-// frame, by a short ticket from doc_open. Data comes through the app's MCP tools (`hl.tools.call`); the machine adds
-// the person's token.
+// The documents' app view in harnessly (`/app`, render/ui.mjs appViewPage), built as a site: it reads its own catalog
+// from this server (`/app/docs`, by the person's session cookie) and opens a document in the same frame, with a way
+// back. Nothing of that waits for harnessly. The harnessly bridge is used for three things only, when it is there: the
+// theme, the object harnessly asks to open (`hl.context.data.object`), and the first sign-in — the app's MCP tool
+// `doc_signin` answers a one-time pass the page trades for the session cookie, so the next opening needs no bridge at all.
 ;(function () {
   'use strict'
 
@@ -12,15 +12,10 @@
     { id: 'mine', label: 'Мои' },
     { id: 'shared', label: 'Общие' },
   ]
-  var STARTERS = [
-    'Итоги недели по проекту',
-    'Спека новой функции: цель, сценарии, «готово когда»',
-    'Разбор инцидента: что случилось, причина, что меняем',
-    'План выката по шагам с откатом',
-  ]
   var SHELVES = 6
   var PER_SHELF = 8
   var LIMIT = 50
+  var BRIDGE_WAIT_MS = 6000
 
   function el(tag, cls, text) {
     var node = document.createElement(tag)
@@ -37,13 +32,6 @@
       .join('\n')
   }
 
-  function call(hl, tool, args) {
-    return hl.tools.call('docs.' + tool, args || {}).then(function (res) {
-      if (hl.refused(res) || !res || res.isError) throw new Error(textOf(res) || 'refused')
-      return res.structuredContent || JSON.parse(textOf(res))
-    })
-  }
-
   function when(iso) {
     if (!iso) return ''
     var d = new Date(iso)
@@ -51,63 +39,201 @@
     return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
   }
 
-  function failed(text) {
+  // ---- The theme: harnessly's when the bridge is there, the system's until then ----
+
+  var theme = { mode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' }
+  if (!document.documentElement.dataset.theme) document.documentElement.dataset.theme = theme.mode
+
+  // ---- The bridge: optional, asked once, never awaited by the catalog ----
+
+  var bridge = null
+  function connect() {
+    if (bridge) return bridge
+    bridge = new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        reject(new Error('no bridge'))
+      }, BRIDGE_WAIT_MS)
+      if (!window.harnessly || !window.harnessly.connect) return reject(new Error('no bridge'))
+      window.harnessly.connect({ protocol: 2 }).then(function (hl) {
+        clearTimeout(timer)
+        resolve(hl)
+      }, reject)
+    })
+    return bridge
+  }
+
+  // ---- Data: our own server, by the session cookie ----
+
+  /** null: the server does not know the person (401). */
+  function ask(path) {
+    return fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }).then(function (res) {
+      if (res.status === 401) return null
+      if (!res.ok) throw new Error(res.status === 404 ? 'not_found' : 'HTTP ' + res.status)
+      return res.json()
+    })
+  }
+
+  /** The first sign-in: harnessly's machine calls the app's MCP tool with the person's token; the answer sets our cookie. */
+  var entering = null
+  function signIn() {
+    if (entering) return entering
+    entering = connect()
+      .then(function (hl) {
+        return hl.tools.call('docs.doc_signin', {}).then(function (res) {
+          if (hl.refused(res) || !res || res.isError) throw new Error(textOf(res) || 'refused')
+          return (res.structuredContent || JSON.parse(textOf(res))).pass
+        })
+      })
+      .then(function (pass) {
+        if (typeof pass !== 'string' || !pass) throw new Error('no sign-in pass')
+        return fetch('/app/enter', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: pass }) })
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error('sign-in refused')
+      })
+    entering.then(
+      function () {
+        entering = null
+      },
+      function () {
+        entering = null
+      },
+    )
+    return entering
+  }
+
+  /** Asks the server, signing in once when it does not know the person yet. null: the person has to sign in. */
+  function own(path) {
+    return ask(path).then(function (body) {
+      if (body) return body
+      return signIn().then(
+        function () {
+          return ask(path)
+        },
+        function () {
+          return null
+        },
+      )
+    })
+  }
+
+  function message(title, text, retry) {
+    root.className = 'dv'
     root.textContent = ''
     root.removeAttribute('aria-busy')
     var box = el('div', 'dv__fail hl-empty')
-    box.appendChild(el('p', 'hl-h', 'Сервис документов сейчас не отвечает'))
-    box.appendChild(el('p', 'hl-muted', text || 'Документы и ссылки на них на месте — попробуйте позже.'))
+    box.appendChild(el('p', 'hl-h', title))
+    if (text) box.appendChild(el('p', 'hl-muted', text))
+    if (retry) {
+      var again = el('button', 'hl-btn', 'Повторить')
+      again.type = 'button'
+      again.addEventListener('click', retry)
+      box.appendChild(again)
+    }
     root.appendChild(box)
   }
 
-  // ---- An open document: only its content ----
-
-  function openDoc(hl, slug) {
-    root.className = 'dv dv--doc'
-    var frame = null
-    function load(mode) {
-      return call(hl, 'doc_open', { slug: slug, theme: mode }).then(function (doc) {
-        if (!frame) {
-          frame = el('iframe', 'dv__content')
-          // The content is untrusted HTML: the server sandboxes it as well.
-          frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads')
-          root.textContent = ''
-          root.removeAttribute('aria-busy')
-          root.appendChild(frame)
-        }
-        frame.title = doc.title
-        frame.src = doc.contentUrl
-      })
-    }
-    load(hl.context.theme.mode).catch(function (error) {
-      failed(String((error && error.message) || ''))
+  function failed(error) {
+    message('Сервис документов сейчас не отвечает', 'Документы и ссылки на них на месте — попробуйте позже.', function () {
+      route()
     })
-    // The theme changes in harnessly: the content is asked again in the new one.
-    hl.on('theme', function (theme) {
-      var mode = theme && theme.mode ? theme.mode : hl.context.theme.mode
-      load(mode).catch(function () {})
+    if (window.console) console.warn(error)
+  }
+
+  function needSignIn() {
+    message('Не получилось войти в документы', 'Вход идёт через harnessly: откройте приложение ещё раз или повторите.', function () {
+      route()
     })
   }
 
-  // ---- Home ----
+  // ---- Where we are: `?doc=<slug>` is an open document, nothing is the catalog ----
 
-  function card(hl, row) {
-    var item = el('button', 'dv__card')
-    item.type = 'button'
+  function current() {
+    var slug = new URLSearchParams(location.search).get('doc')
+    return slug && /^[a-z0-9][a-z0-9-]*$/.test(slug) ? slug : null
+  }
+
+  function go(slug) {
+    if (current() === slug) return
+    history.pushState(null, '', slug ? '?doc=' + encodeURIComponent(slug) : location.pathname)
+    route()
+  }
+
+  var opened = null
+  function route() {
+    var slug = current()
+    opened = null
+    if (slug) openDoc(slug)
+    else home()
+  }
+
+  // ---- An open document: a bar with the way back, and the content ----
+
+  function openDoc(slug) {
+    root.className = 'dv dv--doc'
+    root.textContent = ''
+    root.removeAttribute('aria-busy')
+    var bar = el('div', 'dv__top')
+    var back = el('button', 'hl-btn hl-btn--ghost hl-btn--sm', '← Все документы')
+    back.type = 'button'
+    back.addEventListener('click', function () {
+      go(null)
+    })
+    bar.appendChild(back)
+    var title = el('span', 'dv__top-title', '')
+    bar.appendChild(title)
+    root.appendChild(bar)
+    var frame = el('iframe', 'dv__content')
+    // The content is untrusted HTML: the server sandboxes it as well.
+    frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads')
+    root.appendChild(frame)
+    var here = { slug: slug }
+    opened = here
+    function load() {
+      return own('/app/doc?slug=' + encodeURIComponent(slug) + '&theme=' + theme.mode).then(function (doc) {
+        if (opened !== here) return
+        if (doc === null) return needSignIn()
+        title.textContent = doc.title
+        frame.title = doc.title
+        frame.src = doc.contentUrl
+        if (!here.out && doc.url) {
+          here.out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm', 'Открыть в новой вкладке')
+          here.out.href = doc.url
+          here.out.target = '_blank'
+          here.out.rel = 'noopener'
+          bar.appendChild(here.out)
+        }
+      })
+    }
+    here.reload = load
+    load().catch(function (error) {
+      if (opened !== here) return
+      if (error && error.message === 'not_found') message('Такого документа нет', 'Или он вам недоступен.', function () { go(null) })
+      else failed(error)
+    })
+  }
+
+  // ---- The catalog ----
+
+  function card(row) {
+    var item = el('a', 'dv__card')
+    item.href = '?doc=' + encodeURIComponent(row.slug)
     item.appendChild(el('span', 'dv__name', row.title))
     if (row.description) item.appendChild(el('span', 'dv__desc hl-muted', row.description))
     var meta = [when(row.updatedAt), row.mine ? 'мой' : row.author || ''].filter(Boolean).join(' · ')
     item.appendChild(el('span', 'dv__meta hl-muted', meta))
-    item.addEventListener('click', function () {
-      hl.pane.open('object:' + row.slug)
+    item.addEventListener('click', function (event) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+      event.preventDefault()
+      go(row.slug)
     })
     return item
   }
 
-  function grid(hl, rows) {
+  function grid(rows) {
     var box = el('div', 'dv__grid')
     rows.forEach(function (row) {
-      box.appendChild(card(hl, row))
+      box.appendChild(card(row))
     })
     return box
   }
@@ -142,57 +268,10 @@
     return out
   }
 
-  function home(hl) {
+  var view = { tab: 'all', query: '', rows: null }
+  function home() {
     root.className = 'dv dv--home'
-    var state = { tab: 'all', query: '', rows: null }
-
-    var head = el('header', 'dv__head')
-    head.appendChild(el('h1', 'dv__title', 'Что напишем?'))
-    var form = el('form', 'dv__ask')
-    var field = el('textarea', 'dv__field hl-input')
-    field.rows = 2
-    field.placeholder = 'Опишите документ — агент напишет его в чате рядом'
-    field.setAttribute('aria-label', 'Что напишем')
-    var go = el('button', 'hl-btn hl-btn--primary dv__go', 'Написать')
-    go.type = 'submit'
-    form.appendChild(field)
-    form.appendChild(go)
-    form.addEventListener('submit', function (event) {
-      event.preventDefault()
-      var text = field.value.trim()
-      if (!text) return
-      go.disabled = true
-      hl.chat
-        .send('Подготовь документ: ' + text)
-        .then(function (answer) {
-          if (hl.refused(answer)) throw new Error(answer.message)
-          field.value = ''
-        })
-        .catch(function () {
-          if (hl.ui && hl.ui.toast) hl.ui.toast('Не получилось отправить в чат', { tone: 'error' })
-        })
-        .then(function () {
-          go.disabled = false
-        })
-    })
-    field.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault()
-        form.requestSubmit()
-      }
-    })
-    head.appendChild(form)
-    var starters = el('div', 'dv__starters')
-    STARTERS.forEach(function (line) {
-      var chip = el('button', 'hl-btn hl-btn--ghost hl-btn--sm', line)
-      chip.type = 'button'
-      chip.addEventListener('click', function () {
-        field.value = line
-        field.focus()
-      })
-      starters.appendChild(chip)
-    })
-    head.appendChild(starters)
+    var state = view
 
     var bar = el('div', 'dv__bar')
     var seg = el('div', 'hl-seg dv__tabs')
@@ -210,6 +289,7 @@
     })
     var search = el('input', 'hl-input dv__search')
     search.type = 'search'
+    search.value = state.query
     search.placeholder = 'Поиск по документам'
     search.setAttribute('aria-label', 'Поиск по документам')
     var timer = null
@@ -226,7 +306,6 @@
 
     var body = el('div', 'dv__lib')
     root.textContent = ''
-    root.appendChild(head)
     root.appendChild(bar)
     root.appendChild(body)
 
@@ -252,22 +331,18 @@
       var rows = shown()
       if (!rows.length) {
         body.appendChild(
-          el(
-            'p',
-            'hl-empty',
-            state.query || state.tab !== 'all' ? 'Ничего не нашлось.' : 'Документов пока нет — опишите первый в поле выше.',
-          ),
+          el('p', 'hl-empty', state.query || state.tab !== 'all' ? 'Ничего не нашлось.' : 'Документов пока нет — попросите агента в чате написать первый.'),
         )
         return
       }
       if (state.query || state.tab !== 'all') {
-        body.appendChild(grid(hl, rows))
+        body.appendChild(grid(rows))
         return
       }
       shelves(rows).forEach(function (shelf) {
         var section = el('section', 'dv__shelf')
         section.appendChild(el('h2', 'dv__shelf-title hl-h', shelf.title))
-        section.appendChild(grid(hl, shelf.rows))
+        section.appendChild(grid(shelf.rows))
         body.appendChild(section)
       })
     }
@@ -275,14 +350,15 @@
     var asked = 0
     function fetchRows() {
       var mine = (asked += 1)
-      call(hl, 'doc_find', { query: state.query, limit: LIMIT })
+      own('/app/docs?limit=' + LIMIT + '&q=' + encodeURIComponent(state.query))
         .then(function (found) {
-          if (mine !== asked) return
+          if (mine !== asked || current()) return
+          if (found === null) return needSignIn()
           state.rows = found.items || []
           draw()
         })
         .catch(function (error) {
-          if (mine === asked) failed(String((error && error.message) || ''))
+          if (mine === asked && !current()) failed(error)
         })
     }
 
@@ -291,15 +367,27 @@
     fetchRows()
   }
 
-  window.harnessly
-    .connect({ protocol: 2 })
+  // ---- Start: the catalog at once; harnessly, when it answers, gives the theme and the object to open ----
+
+  window.addEventListener('popstate', route)
+  route()
+
+  connect()
     .then(function (hl) {
+      function follow(mode) {
+        if ((mode !== 'dark' && mode !== 'light') || mode === theme.mode) return
+        theme.mode = mode
+        // The content is asked again in the new theme.
+        if (opened && opened.reload) opened.reload().catch(function () {})
+      }
+      follow(hl.context.theme && hl.context.theme.mode)
+      hl.on('theme', function (next) {
+        follow(next && next.mode ? next.mode : hl.context.theme.mode)
+      })
       var data = hl.context.data
-      var object = data && typeof data.object === 'string' ? data.object : null
-      if (object) openDoc(hl, object)
-      else home(hl)
+      if (data && typeof data.object === 'string' && !current()) go(data.object)
     })
     .catch(function () {
-      failed('Этот вид открывается внутри harnessly.')
+      // Opened outside harnessly, or harnessly did not answer: the site works by itself.
     })
 })()

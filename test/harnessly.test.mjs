@@ -209,7 +209,7 @@ describe('harnessly mode', () => {
       assert.equal(init.data.result.protocolVersion, '2025-06-18')
       assert.match(init.data.result.instructions, /through the harnessly hub/)
       const list = await mcp(hub.token(), 'tools/list', {})
-      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_open', 'doc_share'])
+      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_signin', 'doc_open', 'doc_share'])
     })
 
     it('acknowledges notifications with 202', async () => {
@@ -261,6 +261,38 @@ describe('harnessly mode', () => {
     it('refuses pages of other sites', async () => {
       const response = await app.request('POST', '/mcp', { token: hub.token(), body: { jsonrpc: '2.0', id: 1, method: 'tools/list' }, headers: { origin: 'https://evil.example' } })
       assert.equal(response.status, 403)
+    })
+
+    it('signs the app view in: a one-time pass makes a session of the hub person, who reads only what the hub allows', async () => {
+      const view = await startApp({ ARTIFACTS_AUTH: 'harnessly', ARTIFACTS_HARNESSLY_ISSUER: hub.issuer, ARTIFACTS_HARNESSLY_ACCESS_TOKEN: ACCESS_TOKEN, ARTIFACTS_APP_VIEW: 'true' })
+      try {
+        for (const doc of DOCS) await view.service.publish(doc)
+        const viewCall = async (token, name, args) => (await view.request('POST', '/mcp', { token, body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, headers: { accept: 'application/json, text/event-stream' } })).data.result
+        // No session: the view's own data is closed, and a static token has no person to sign in.
+        assert.equal((await view.request('GET', '/app/docs', { token: null })).status, 401)
+        assert.equal((await viewCall(TOKEN, 'doc_signin', {})).isError, true)
+        const { pass } = (await viewCall(hub.token(), 'doc_signin', {})).structuredContent
+        const enter = (t, headers = { 'sec-fetch-site': 'same-origin' }) => fetch(`${view.base}/app/enter`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ t }) })
+        // Another site's page cannot plant a session, and the pass is good once.
+        assert.equal((await enter(pass, { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' })).status, 403)
+        const entered = await enter(pass)
+        assert.equal(entered.status, 200)
+        const cookie = entered.headers.get('set-cookie').split(';')[0]
+        assert.equal((await enter(pass)).status, 401)
+        const docs = await view.request('GET', '/app/docs', { token: null, headers: { cookie } })
+        assert.equal(docs.status, 200)
+        assert.deepEqual(docs.data.items.map((item) => item.slug).sort(), ['roadmap-comment', 'roadmap-edit', 'roadmap-open'])
+        const doc = await view.request('GET', '/app/doc?slug=roadmap-open&theme=dark', { token: null, headers: { cookie } })
+        assert.equal(doc.status, 200)
+        assert.equal(doc.data.title, 'Roadmap open')
+        const raw = await view.request('GET', doc.data.contentUrl, { token: null, raw: true })
+        assert.equal(raw.status, 200)
+        assert.match(raw.text, /shared plan/)
+        assert.equal((await view.request('GET', '/app/doc?slug=roadmap-secret', { token: null, headers: { cookie } })).status, 404)
+        assert.equal((await enter('wrong')).status, 401)
+      } finally {
+        await view.close()
+      }
     })
 
     it('takes bearer tokens only, not a browser session', async () => {
