@@ -9,7 +9,7 @@
  * optional expiry. Revoking sharing bumps the generation in the manifest, which
  * invalidates every token issued before, without a list of revoked tokens.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 const b64 = (buffer) => Buffer.from(buffer).toString('base64url')
 
@@ -71,16 +71,19 @@ export function viewTicketValid(signer, token, slug, now = Date.now()) {
 }
 
 /** How long the app view's sign-in pass lives: the view uses it at once. */
-export const ENTER_PASS_SECONDS = 120
+export const ENTER_PASS_SECONDS = 60
 
-/** A pass that signs a hub person in to the app view (`/app/enter?t=`), issued by doc_signin to the person of the token. */
+/**
+ * A pass that signs a hub person in to the app view (`POST /app/enter`), issued by doc_signin to the person of the
+ * token. It is good once: `j` is its id, which the server remembers until the pass expires.
+ */
 export function issueEnterPass(signer, person, now = Date.now()) {
-  return signer.sign('enter', { s: person.sub, n: person.name, m: person.email ?? null, e: Math.floor(now / 1000) + ENTER_PASS_SECONDS })
+  return signer.sign('enter', { s: person.sub, n: person.name, m: person.email ?? null, j: randomBytes(16).toString('base64url'), e: Math.floor(now / 1000) + ENTER_PASS_SECONDS })
 }
 
-/** The person of an enter pass, or null when it is wrong or expired. */
+/** The person of an enter pass and the pass's id and end, or null when it is wrong or expired. */
 export function enterPassPerson(signer, token, now = Date.now()) {
   const payload = signer.verify('enter', token, now)
-  if (!payload || typeof payload.s !== 'string' || !payload.s || typeof payload.e !== 'number') return null
-  return { sub: payload.s, name: payload.n || payload.s, email: payload.m || undefined }
+  if (!payload || typeof payload.s !== 'string' || !payload.s || typeof payload.e !== 'number' || typeof payload.j !== 'string' || !payload.j) return null
+  return { sub: payload.s, name: payload.n || payload.s, email: payload.m || undefined, id: payload.j, expires: payload.e }
 }

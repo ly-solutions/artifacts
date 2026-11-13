@@ -2,7 +2,7 @@
 // from this server (`/app/docs`, by the person's session cookie) and opens a document in the same frame, with a way
 // back. Nothing of that waits for harnessly. The harnessly bridge is used for three things only, when it is there: the
 // theme, the object harnessly asks to open (`hl.context.data.object`), and the first sign-in — the app's MCP tool
-// `doc_signin` answers a one-time address that sets the session cookie, so the next opening needs no bridge at all.
+// `doc_signin` answers a one-time pass the page trades for the session cookie, so the next opening needs no bridge at all.
 ;(function () {
   'use strict'
 
@@ -81,12 +81,15 @@
       .then(function (hl) {
         return hl.tools.call('docs.doc_signin', {}).then(function (res) {
           if (hl.refused(res) || !res || res.isError) throw new Error(textOf(res) || 'refused')
-          return (res.structuredContent || JSON.parse(textOf(res))).url
+          return (res.structuredContent || JSON.parse(textOf(res))).pass
         })
       })
-      .then(function (url) {
-        if (typeof url !== 'string' || url.indexOf('/app/enter?') !== 0) throw new Error('bad sign-in address')
-        return fetch(url, { credentials: 'same-origin' })
+      .then(function (pass) {
+        if (typeof pass !== 'string' || !pass) throw new Error('no sign-in pass')
+        return fetch('/app/enter', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: pass }) })
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error('sign-in refused')
       })
     entering.then(
       function () {

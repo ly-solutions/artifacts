@@ -271,12 +271,14 @@ describe('harnessly mode', () => {
         // No session: the view's own data is closed, and a static token has no person to sign in.
         assert.equal((await view.request('GET', '/app/docs', { token: null })).status, 401)
         assert.equal((await viewCall(TOKEN, 'doc_signin', {})).isError, true)
-        const { url } = (await viewCall(hub.token(), 'doc_signin', {})).structuredContent
-        assert.match(url, /^\/app\/enter\?t=/)
-        const entered = await fetch(`${view.base}${url}`, { redirect: 'manual' })
-        assert.equal(entered.status, 302)
-        assert.equal(entered.headers.get('location'), '/app')
+        const { pass } = (await viewCall(hub.token(), 'doc_signin', {})).structuredContent
+        const enter = (t, headers = { 'sec-fetch-site': 'same-origin' }) => fetch(`${view.base}/app/enter`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ t }) })
+        // Another site's page cannot plant a session, and the pass is good once.
+        assert.equal((await enter(pass, { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' })).status, 403)
+        const entered = await enter(pass)
+        assert.equal(entered.status, 200)
         const cookie = entered.headers.get('set-cookie').split(';')[0]
+        assert.equal((await enter(pass)).status, 401)
         const docs = await view.request('GET', '/app/docs', { token: null, headers: { cookie } })
         assert.equal(docs.status, 200)
         assert.deepEqual(docs.data.items.map((item) => item.slug).sort(), ['roadmap-comment', 'roadmap-edit', 'roadmap-open'])
@@ -287,7 +289,7 @@ describe('harnessly mode', () => {
         assert.equal(raw.status, 200)
         assert.match(raw.text, /shared plan/)
         assert.equal((await view.request('GET', '/app/doc?slug=roadmap-secret', { token: null, headers: { cookie } })).status, 404)
-        assert.equal((await view.request('GET', '/app/enter?t=wrong', { token: null })).status, 401)
+        assert.equal((await enter('wrong')).status, 401)
       } finally {
         await view.close()
       }

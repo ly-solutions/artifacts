@@ -70,7 +70,7 @@ export const TOOLS = [
   {
     name: 'doc_signin',
     title: 'Sign the app view in',
-    description: 'For the app view only, not for an agent: a one-time address (two minutes) that signs the person of the token in to the documents site inside the view, so the view reads its catalog and opens documents by itself.',
+    description: 'For the app view only, not for an agent: a one-time pass (a minute) that signs the person of the token in to the documents site inside the view, so the view reads its catalog and opens documents by itself.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
@@ -194,7 +194,7 @@ export function createMcpHandler({ config, service, searchFor, docAccess, viewTi
     async doc_signin(principal) {
       if (!config.appView?.enabled || !enterPass) throw new ToolError('the app view is off on this server')
       if (!principal.hub || !principal.sub) throw new ToolError('sign-in needs a harnessly app token: it names the person')
-      return { url: `/app/enter?t=${encodeURIComponent(enterPass(principal))}` }
+      return { pass: enterPass(principal) }
     },
 
     async doc_versions(principal, args) {

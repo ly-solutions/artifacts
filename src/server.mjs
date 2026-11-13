@@ -201,6 +201,9 @@ export async function createApp(config, { storage, log = createLogger(config.log
     return access
   }
 
+  /** Sign-in passes of the app view already used, by id, until they expire (in this process). */
+  const usedPasses = new Map()
+
   const mcp = createMcpHandler({ config, service, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug), enterPass: (person) => issueEnterPass(service.signer, person) })
 
   // ---- route handlers --------------------------------------------------------
@@ -466,10 +469,16 @@ export async function createApp(config, { storage, log = createLogger(config.log
     if (path === '/mcp') return mcp(req, res, principal)
 
     // ---- the app view's own sign-in and data (the view is a site: it does not ask harnessly for its documents) ----
-    if (config.appView.enabled && path === '/app/enter' && method === 'GET') {
-      const person = auth.hub ? enterPassPerson(service.signer, url.searchParams.get('t')) : null
-      if (!person) return json(res, 401, { error: 'unauthorized', hint: 'the sign-in pass is wrong or expired' })
-      return redirect(res, '/app', { 'set-cookie': auth.sessionCookie({ ...person, role: 'member', hub: true }) })
+    // The pass comes in the body of a request of our own page (never in an address, so not in logs), and is good once.
+    if (config.appView.enabled && path === '/app/enter' && method === 'POST') {
+      if (req.headers.origin !== publicOrigin && req.headers['sec-fetch-site'] !== 'same-origin') throw new ApiError(403, 'cross_site', { hint: 'the app view signs in from this server’s own page' })
+      const body = await readJson(req, 4096)
+      const now = Date.now()
+      const pass = auth.hub ? enterPassPerson(service.signer, body?.t, now) : null
+      for (const [id, expires] of usedPasses) if (expires * 1000 <= now) usedPasses.delete(id)
+      if (!pass || usedPasses.has(pass.id)) return json(res, 401, { error: 'unauthorized', hint: 'the sign-in pass is wrong, expired or already used' })
+      usedPasses.set(pass.id, pass.expires)
+      return json(res, 200, { ok: true }, { 'set-cookie': auth.sessionCookie({ sub: pass.sub, name: pass.name, email: pass.email, role: 'member', hub: true }) })
     }
     if (config.appView.enabled && path === '/app/docs' && method === 'GET') {
       if (principal.via === 'bearer' || (!canRead(principal) && !principal.hub)) return json(res, 401, { error: 'unauthorized', hint: 'sign in: the session cookie is missing or expired' })
