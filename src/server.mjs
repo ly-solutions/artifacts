@@ -14,7 +14,7 @@ import { unifiedDiff } from './diff.mjs'
 import { createMcpHandler } from './mcp.mjs'
 import { PluginHost, isApiErrorLike, loadPluginModules } from './plugins.mjs'
 import { renderVersion } from './render/doc.mjs'
-import { issueViewTicket, viewTicketValid } from './signing.mjs'
+import { enterPassPerson, issueEnterPass, issueViewTicket, viewTicketValid } from './signing.mjs'
 import { appViewPage, catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
 import { ApiError, ArtifactService } from './service.mjs'
 import { isValidSlug, normalizeTags } from './text.mjs'
@@ -201,7 +201,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     return access
   }
 
-  const mcp = createMcpHandler({ config, service, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug) })
+  const mcp = createMcpHandler({ config, service, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug), enterPass: (person) => issueEnterPass(service.signer, person) })
 
   // ---- route handlers --------------------------------------------------------
 
@@ -427,7 +427,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     if (path.startsWith('/static/')) return serveStatic(res, path.slice('/static/'.length))
     if (path === '/favicon.svg' || path === '/favicon.ico') return serveStatic(res, 'favicon.svg')
     if (path === '/robots.txt') return send(res, 200, 'User-agent: *\nDisallow: /\n', { 'content-type': 'text/plain' })
-    // The app view for harnessly: a page with no data of its own (its data comes through the app's MCP tools).
+    // The app view for harnessly: the page; its data is /app/docs below, by the session cookie.
     if (path === '/app' && method === 'GET') {
       if (!config.appView.enabled) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: 'There is nothing at this address.', principal: ANONYMOUS }))
       return html(res, 200, appViewPage({ siteName: config.siteName }), { frameAncestors: ancestors.length ? ancestors.join(' ') : "'none'" })
@@ -464,6 +464,44 @@ export async function createApp(config, { storage, log = createLogger(config.log
 
     // ---- MCP (Streamable HTTP, see docs/mcp.md) -------------------------------
     if (path === '/mcp') return mcp(req, res, principal)
+
+    // ---- the app view's own sign-in and data (the view is a site: it does not ask harnessly for its documents) ----
+    if (config.appView.enabled && path === '/app/enter' && method === 'GET') {
+      const person = auth.hub ? enterPassPerson(service.signer, url.searchParams.get('t')) : null
+      if (!person) return json(res, 401, { error: 'unauthorized', hint: 'the sign-in pass is wrong or expired' })
+      return redirect(res, '/app', { 'set-cookie': auth.sessionCookie({ ...person, role: 'member', hub: true }) })
+    }
+    if (config.appView.enabled && path === '/app/docs' && method === 'GET') {
+      if (principal.via === 'bearer' || (!canRead(principal) && !principal.hub)) return json(res, 401, { error: 'unauthorized', hint: 'sign in: the session cookie is missing or expired' })
+      const limit = Math.min(Math.max(Math.floor(Number(url.searchParams.get('limit') ?? 50)) || 50, 1), 50)
+      const result = await searchFor(principal, { q: url.searchParams.get('q') ?? '', tags: [], limit, offset: 0 })
+      return json(res, 200, {
+        total: result.total,
+        items: result.items.map((item) => ({
+          slug: item.slug,
+          title: item.title,
+          description: item.description,
+          tags: item.tags,
+          author: item.author,
+          updatedAt: item.updatedAt,
+          url: item.viewUrl,
+          mine: Boolean(item.author && (item.author === principal.name || (principal.email && item.author === principal.email))),
+        })),
+      })
+    }
+
+    // One document for the view: its title and its content's address with a short ticket (the content frame is
+    // sandboxed, so it does not rely on the cookie).
+    if (config.appView.enabled && path === '/app/doc' && method === 'GET') {
+      if (principal.via === 'bearer' || (!canRead(principal) && !principal.hub)) return json(res, 401, { error: 'unauthorized', hint: 'sign in: the session cookie is missing or expired' })
+      const slug = url.searchParams.get('slug') ?? ''
+      if (!isValidSlug(slug)) return json(res, 404, { error: 'not_found' })
+      await docAccess(principal, slug)
+      const { meta } = await service.get(slug)
+      const artifact = service.present(meta)
+      const theme = ['dark', 'light'].includes(url.searchParams.get('theme')) ? `&theme=${url.searchParams.get('theme')}` : ''
+      return json(res, 200, { slug, title: artifact.title, url: artifact.viewUrl, contentUrl: `/a/${slug}/raw?t=${encodeURIComponent(issueViewTicket(service.signer, slug))}${theme}` })
+    }
 
     // ---- sign-in -------------------------------------------------------------
     if (path === '/login') {

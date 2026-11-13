@@ -69,3 +69,18 @@ export function viewTicketValid(signer, token, slug, now = Date.now()) {
   const payload = signer.verify('view', token, now)
   return Boolean(payload && payload.s === slug && typeof payload.e === 'number')
 }
+
+/** How long the app view's sign-in pass lives: the view uses it at once. */
+export const ENTER_PASS_SECONDS = 120
+
+/** A pass that signs a hub person in to the app view (`/app/enter?t=`), issued by doc_signin to the person of the token. */
+export function issueEnterPass(signer, person, now = Date.now()) {
+  return signer.sign('enter', { s: person.sub, n: person.name, m: person.email ?? null, e: Math.floor(now / 1000) + ENTER_PASS_SECONDS })
+}
+
+/** The person of an enter pass, or null when it is wrong or expired. */
+export function enterPassPerson(signer, token, now = Date.now()) {
+  const payload = signer.verify('enter', token, now)
+  if (!payload || typeof payload.s !== 'string' || !payload.s || typeof payload.e !== 'number') return null
+  return { sub: payload.s, name: payload.n || payload.s, email: payload.m || undefined }
+}

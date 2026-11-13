@@ -2,7 +2,7 @@
   "id": "harnessly.docs",
   "name": "Документы",
   "description": "Каталог документов команды: агент находит, читает, сравнивает версии и делится ссылкой; публикует через хаб",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "harnessly": ">=0.16.68",
   "trust": "sandboxed",
   "targets": [
@@ -33,14 +33,7 @@
       "title": "Документы",
       "entry": "${install:artifactsUrl}/app",
       "targets": [
-        "app"
-      ]
-    },
-    {
-      "id": "home",
-      "title": "Последние документы",
-      "entry": "ui/index.html",
-      "targets": [
+        "app",
         "pane"
       ]
     }

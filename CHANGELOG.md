@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The harnessly app view (`/app`) is a site of its own: it reads the catalog (`GET /app/docs`) and a document
+  (`GET /app/doc`) by the session cookie, opens a document in the same frame (`?doc=<slug>`) with a way back, and no
+  longer waits for the harnessly bridge or the machine. The first sign-in goes through the new MCP tool `doc_signin`
+  (a one-time pass, `/app/enter`); the session is the hub person's, with rights still asked of the hub. The «Что
+  напишем?» field and its starters are gone. The app package (0.3.0) has one view, for the app and the pane.
+
 ### Added
 
 - `harnessly-app/`: the harnessly app package «Документы» (manifest, `.mcp.json` with the installation's address

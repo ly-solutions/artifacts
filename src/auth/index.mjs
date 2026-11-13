@@ -130,7 +130,9 @@ export class Authenticator {
     const cookie = parseCookies(req.headers.cookie)[SESSION_COOKIE]
     if (cookie) {
       const session = this.signer.verify('session', cookie)
-      if (session) return { role: session.r, name: session.n, email: session.m, via: 'session' }
+      // A hub person's session (the app view's sign-in): rights on each document still come from the hub.
+      if (session && session.h && this.hub && typeof session.s === 'string') return { role: 'member', name: session.n, email: session.m, sub: session.s, hub: true, via: 'session' }
+      if (session && !session.h) return { role: session.r, name: session.n, email: session.m, via: 'session' }
     }
     return ANONYMOUS
   }
@@ -168,7 +170,7 @@ export class Authenticator {
 
   sessionCookie(principal) {
     const ttl = this.auth.sessionTtl
-    const token = this.signer.sign('session', { n: principal.name, m: principal.email, r: principal.role, e: Math.floor(Date.now() / 1000) + ttl, i: randomBytes(6).toString('base64url') })
+    const token = this.signer.sign('session', { n: principal.name, m: principal.email, r: principal.role, ...(principal.hub ? { h: 1, s: principal.sub } : {}), e: Math.floor(Date.now() / 1000) + ttl, i: randomBytes(6).toString('base64url') })
     return this.cookie(SESSION_COOKIE, token, ttl)
   }
 
