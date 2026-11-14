@@ -172,3 +172,13 @@ body {
     flex: 1 1 100%;
   }
 }
+
+/* «Открыть в новой вкладке» is an icon with its words as the tip: the bar never cuts it (HRN-1452). */
+.dv__out {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+}
