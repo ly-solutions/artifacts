@@ -320,7 +320,14 @@ export async function createApp(config, { storage, log = createLogger(config.log
     return json(res, 404, { error: 'not_found' })
   }
 
-  async function serveContent(res, { meta, ref, theme, download, shared = false }) {
+  /**
+   * The app view's document (its ticket): the words the person selects, and where, go to the view — our own page, the
+   * frame's parent — so harnessly's chat can take them as its context. Only the selection, only to our origin.
+   */
+  const selectionReporter = () =>
+    `<script>(function(){var last='',timer=0,to=${JSON.stringify(publicOrigin)};function send(){var s=window.getSelection(),t=s&&s.rangeCount?String(s).replace(/\\s+/g,' ').trim().slice(0,600):'',r=null;if(t){var b=s.getRangeAt(0).getBoundingClientRect();r={x:Math.round(b.left),y:Math.round(b.top),w:Math.round(b.width),h:Math.round(b.height)}}if(t===last)return;last=t;window.parent.postMessage({type:'doc-selection',text:t,rect:r},to)}document.addEventListener('selectionchange',function(){clearTimeout(timer);timer=setTimeout(send,250)})})()</script>`
+
+  async function serveContent(res, { meta, ref, theme, download, shared = false, appView = false }) {
     const { version, n } = service.resolveVersion(meta, ref)
     const content = await service.store.readVersionContent(meta.slug, version)
     if (download === 'markdown') {
@@ -338,6 +345,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       page.html = await host.renderWidgets(page.html, { ...context, phase: 'read' })
       if (host.readHooks.length) page.html = await host.runReadHooks({ html: page.html }, { ...context, artifact: service.present(meta) })
     }
+    if (appView) page.html = /<\/body>/i.test(page.html) ? page.html.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${selectionReporter()}</body>`) : page.html + selectionReporter()
     const headers = { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': contentCsp(), 'cache-control': 'no-store', 'x-artifact-version': String(n) }
     if (download === 'html') headers['content-disposition'] = `attachment; filename="${meta.slug}-v${n}.html"`
     send(res, 200, page.html, headers)
@@ -684,7 +692,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       if (ticket && found) {
         const granted = viewTicketValid(service.signer, ticket, slug)
         if (!granted) return json(res, 401, { error: 'unauthorized', hint: 'the view ticket is wrong or expired' })
-        return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), shared: true })
+        return serveContent(res, { meta: found.meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), shared: true, appView: true })
       }
       // Links of the previous system (`/a/<slug>?k=<key>`) keep working while the document stays shared.
       if (kind === 'a' && legacyKey && found && (sub === undefined || sub === '/raw') && service.legacyKeyMatches(found.meta, legacyKey)) {

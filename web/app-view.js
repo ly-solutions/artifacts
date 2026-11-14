@@ -160,8 +160,33 @@
   }
 
   var opened = null
+  // ---- What harnessly's chat knows: the document open, and the words selected in it and where ----
+
+  var shown = null
+  function tell(space) {
+    connect().then(
+      function (hl) {
+        if (hl.publish) return hl.publish({ space: space })
+      },
+      function () {}
+    ).catch(function () {})
+  }
+
+  window.addEventListener('message', function (event) {
+    var frame = shown && shown.frame
+    if (!frame || event.source !== frame.contentWindow) return
+    var m = event.data || {}
+    if (m.type !== 'doc-selection' || !shown.title) return
+    var r = m.rect
+    var at = frame.getBoundingClientRect()
+    var rect = r && typeof r.x === 'number' ? { x: r.x + at.left, y: r.y + at.top, w: r.w, h: r.h } : null
+    tell({ kind: 'document', title: shown.title, url: shown.url, selection: String(m.text || '').slice(0, 600), rect: rect })
+  })
+
   function route() {
     var slug = current()
+    if (!slug && shown) tell(null)
+    if (!slug) shown = null
     opened = null
     if (slug) openDoc(slug)
     else home()
@@ -196,6 +221,8 @@
         title.textContent = doc.title
         frame.title = doc.title
         frame.src = doc.contentUrl
+        shown = { frame: frame, title: doc.title, url: doc.url || '' }
+        tell({ kind: 'document', title: doc.title, url: doc.url || '', selection: '', rect: null })
         if (!here.out && doc.url) {
           here.out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm', 'Открыть в новой вкладке')
           here.out.href = doc.url
