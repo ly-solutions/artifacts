@@ -180,12 +180,14 @@
     var r = m.rect
     var at = frame.getBoundingClientRect()
     var rect = r && typeof r.x === 'number' ? { x: r.x + at.left, y: r.y + at.top, w: r.w, h: r.h } : null
-    tell({ kind: 'document', title: shown.title, url: shown.url, selection: String(m.text || '').slice(0, 600), rect: rect })
+    tell({ kind: 'document', title: shown.title, url: shown.url, object: shown.slug, selection: String(m.text || '').slice(0, 600), rect: rect })
   })
 
   function route() {
     var slug = current()
-    if (!slug && shown) tell(null)
+    // The catalog has nothing open: harnessly drops the chip of a document shown before, even one of a frame before
+    // this one (it starts anew when the chat is made, HRN-1452), so the agent never gets a document nobody reads.
+    if (!slug) tell(null)
     if (!slug) shown = null
     opened = null
     if (slug) openDoc(slug)
@@ -221,10 +223,15 @@
         title.textContent = doc.title
         frame.title = doc.title
         frame.src = doc.contentUrl
-        shown = { frame: frame, title: doc.title, url: doc.url || '' }
-        tell({ kind: 'document', title: doc.title, url: doc.url || '', selection: '', rect: null })
+        shown = { frame: frame, title: doc.title, url: doc.url || '', slug: slug }
+        tell({ kind: 'document', title: doc.title, url: doc.url || '', object: slug, selection: '', rect: null })
         if (!here.out && doc.url) {
-          here.out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm', 'Открыть в новой вкладке')
+          // An icon with its words as the tip: the bar never cuts it, however narrow the pane (HRN-1452).
+          here.out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm dv__out')
+          here.out.setAttribute('aria-label', 'Открыть в новой вкладке')
+          here.out.title = 'Открыть в новой вкладке'
+          here.out.innerHTML =
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
           here.out.href = doc.url
           here.out.target = '_blank'
           here.out.rel = 'noopener'
@@ -397,7 +404,18 @@
   // ---- Start: the catalog at once; harnessly, when it answers, gives the theme and the object to open ----
 
   window.addEventListener('popstate', route)
-  route()
+  // Inside harnessly the object to open comes with the bridge: wait a moment for it, so a frame started anew (the chat
+  // was just made) goes straight back to its document, not through the catalog (HRN-1452). Never longer than this.
+  var FIRST_WAIT_MS = 800
+  var started = false
+  function start(object) {
+    if (started) return
+    started = true
+    if (object && !current()) history.replaceState(null, '', '?doc=' + encodeURIComponent(object))
+    route()
+  }
+  if (current() || !window.harnessly) start(null)
+  else setTimeout(function () { start(null) }, FIRST_WAIT_MS)
 
   connect()
     .then(function (hl) {
@@ -412,9 +430,12 @@
         follow(next && next.mode ? next.mode : hl.context.theme.mode)
       })
       var data = hl.context.data
-      if (data && typeof data.object === 'string' && !current()) go(data.object)
+      var object = data && typeof data.object === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.object) ? data.object : null
+      if (!started) start(object)
+      else if (object && !current()) go(object)
     })
     .catch(function () {
       // Opened outside harnessly, or harnessly did not answer: the site works by itself.
+      start(null)
     })
 })()

@@ -1,0 +1,33 @@
+{
+  "prompt": "почему так долго? коротко\n\n<annotation n=\"1\" kind=\"space\">\nopen: document «Сбой оплаты 14 марта» https://docs.example.com/a/checkout-incident-a1b2c3\nslug: checkout-incident-a1b2c3\nselection: Чинили 40 минут\nrule: человек работает в этом месте — документ «Сбой оплаты 14 марта» открыт(а) у него на экране. Всё, о чём он просит, делай здесь, не спрашивая, куда положить; другое место — только если он сам его назвал.\n</annotation>",
+  "mocks": {
+    "mcp": {
+      "docs": "fixtures/docs.json"
+    }
+  },
+  "expect": {
+    "tool_used": [
+      "docs.doc_show"
+    ],
+    "tool_not_used": [
+      "docs.doc_find",
+      "docs.doc_share"
+    ],
+    "final_text": [
+      "сертификат"
+    ],
+    "final_text_not": [
+      "(?i)какой (именно )?документ",
+      "(?i)пришлите ссылку",
+      "(?i)о каком документе"
+    ],
+    "max_tool_calls": 5
+  },
+  "graders": [
+    {
+      "llm": "The agent read the open document checkout-incident-a1b2c3 (not a search for another one) and answered about it without asking which document."
+    }
+  ],
+  "runs": 3,
+  "baseline": true
+}
