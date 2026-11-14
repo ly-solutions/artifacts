@@ -2,7 +2,7 @@
   "id": "harnessly.docs",
   "name": "Документы",
   "description": "Каталог документов команды: агент находит, читает, сравнивает версии и делится ссылкой; публикует через хаб",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "harnessly": ">=0.16.68",
   "trust": "sandboxed",
   "targets": [
@@ -18,7 +18,8 @@
   },
   "permissions": [
     "chat.prompt",
-    "pane.open"
+    "pane.open",
+    "context.publish"
   ],
   "agent": {
     "instructions": "instructions.md",
