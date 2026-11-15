@@ -82,8 +82,36 @@
   // ---- Screens ----
 
   var current = null // { destroy }
+  // ---- harnessly's own actions (HRN-1498) ----
+  // harnessly draws no bar above the app: share, the right pane and its menu come into our ⋯. None without harnessly or
+  // on a harnessly that does not offer them; the ⋯ then is as it was.
+
+  var HOST_ICON = { share: 'share', 'panel-right': 'layout-dashboard', info: 'info', settings: 'pencil', bug: 'code-xml', x: 'x', plus: 'plus' }
+  function hostActions() {
+    if (!window.harnessly) return Promise.resolve([])
+    return connect()
+      .then(function (hl) { return hl.host ? hl.host.actions() : null })
+      .then(function (r) { return (r && Array.isArray(r.actions) && r.actions) || [] })
+      .catch(function () { return [] })
+  }
+  function hostRun(id) {
+    connect().then(function (hl) { if (hl.host && id) return hl.host.run(id) }).catch(function () {})
+  }
+  /** harnessly's actions as menu rows, before the app's own; `close` closes the menu first. */
+  function hostRows(list, close) {
+    if (!list.length) return null
+    var box = h('div')
+    list.forEach(function (a) {
+      box.appendChild(DX.mi(HOST_ICON[a.icon] || 'ellipsis', a.label, function () { close(); hostRun(a.id) }, { danger: Boolean(a.danger), on: Boolean(a.pressed) }))
+    })
+    box.appendChild(h('div.msep'))
+    return box
+  }
+
   var shell = {
     theme: function () { return theme.mode },
+    hostActions: hostActions,
+    hostRows: hostRows,
     tell: tell,
     chat: chat,
     back: function () { go(null) },
@@ -151,10 +179,13 @@
     moreBtn.hidden = true
     var head = h('div.lhd', h('h1', 'Документы'), h('label.srch', DX.icon('search'), search, h('kbd', /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K')), moreBtn, newBtn)
     function listMenu(anchor) {
-      DX.popover(anchor, function (close) {
-        return h('div', DX.mi('trash-2', 'Корзина', function () { close(); trashMenu(anchor, fetchRows) }))
-      }, { align: 'end' })
+      hostActions().then(function (list) {
+        DX.popover(anchor, function (close) {
+          return h('div', hostRows(list, close), state.hub ? DX.mi('trash-2', 'Корзина', function () { close(); trashMenu(anchor, fetchRows) }) : null)
+        }, { align: 'end' })
+      })
     }
+    hostActions().then(function (list) { if (list.length) moreBtn.hidden = false })
     var seg = h('div.seg.sm', { role: 'tablist' })
     TABS.forEach(function (t) {
       seg.appendChild(h('button', { type: 'button', role: 'tab', 'data-tab': t[0], onClick: function () { state.tab = t[0]; draw() } }, t[1]))
@@ -239,7 +270,7 @@
           state.rows = found.items || []
           state.canCreate = !!found.canCreate
           state.hub = !!found.hub
-          moreBtn.hidden = !state.hub
+          if (state.hub) moreBtn.hidden = false
           state.next = found.nextOffset
           draw()
         },
