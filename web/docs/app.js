@@ -435,10 +435,23 @@
       }
       follow(hl.context.theme && hl.context.theme.mode)
       hl.on('theme', function (next) { follow(next && next.mode ? next.mode : hl.context.theme.mode) })
-      var data = hl.context.data
-      var object = data && typeof data.object === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.object) ? data.object : null
-      if (!started) start(object)
-      else if (object && !params().slug) go(object)
+      // What harnessly asks to open. harnessly keeps one window of the app alive while the person goes between boards,
+      // documents and their lists (HRN-1469): a later ask comes as a `context` event. Only a new ask moves the view: the
+      // same context again (the theme changed) leaves the document the person opened.
+      var asked = null
+      function ask(data) {
+        var object = data && typeof data.object === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(data.object) ? data.object : null
+        var key = object || ''
+        if (key === asked) return
+        var first = asked === null
+        asked = key
+        if (!started) return start(object)
+        // The first ask does not take the person away from a document they opened before harnessly answered.
+        if (object && !(first && params().slug)) go(object)
+        else if (!object && !first && params().slug) go(null)
+      }
+      ask(hl.context.data)
+      hl.on('context', function (ctx) { ask(ctx && ctx.data) })
     },
     function () { start(null) },
   )

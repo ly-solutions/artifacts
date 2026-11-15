@@ -58,6 +58,12 @@ describe('app view on', () => {
     assert.equal((await app.request('GET', '/static/docs/app.js', { token: null, raw: true })).status, 200)
   })
 
+  it('follows a later ask of harnessly in the same window (HRN-1469)', async () => {
+    const js = (await app.request('GET', '/static/docs/app.js', { token: null, raw: true })).text
+    assert.match(js, /hl\.on\('context', function \(ctx\) \{ ask\(ctx && ctx\.data\) \}\)/)
+    assert.match(js, /if \(key === asked\) return/)
+  })
+
   it('opens a document by a short ticket of its own', async () => {
     const slug = await publish(app, 'Plan')
     const other = await publish(app, 'Other')
