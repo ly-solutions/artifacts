@@ -1941,3 +1941,49 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Colour and background of the selected words */
+.colors {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  min-width: 232px;
+}
+.colors .crow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.colors .clab {
+  width: 44px;
+  font-size: 12px;
+  color: var(--dx-fg2);
+}
+.csw {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid var(--dx-border2);
+  background: var(--c);
+  cursor: pointer;
+  transition: transform 0.12s var(--dx-ease);
+}
+.csw[data-k='text'] {
+  background: transparent;
+  color: var(--c);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.csw[data-k='text']::before {
+  content: 'А';
+}
+.csw:hover {
+  transform: scale(1.12);
+}
+.page .bc u,
+.page u {
+  text-underline-offset: 2px;
+}
