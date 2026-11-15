@@ -6,6 +6,7 @@
  * changes only what the hub allows. Writes come from this server's own pages only (checkSameOrigin).
  */
 import { canRead, canWrite } from './auth/index.mjs'
+import { sendCommentEvent } from './hub-events.mjs'
 import { CommentError, mayComment, mentionsAgent, personId } from './comments.mjs'
 import { HubDocsError } from './auth/harnessly.mjs'
 import { ApiError } from './service.mjs'
@@ -302,10 +303,12 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
     await commentAccess(principal, body.slug)
     if (path === '/app/comments') {
       const { result, rev } = await comments.newThread(body.slug, { anchor: body.anchor, text: body.text, author: asPerson(principal) })
+      sendCommentEvent(service, { event: 'thread.created', slug: body.slug, thread: result, message: result.messages[0], principal })
       return json(res, 201, { thread: result, rev, agent: mentionsAgent(body.text) })
     }
     if (path === '/app/comments/reply') {
       const { result, rev } = await comments.reply(body.slug, String(body.thread), { text: body.text, author: asPerson(principal) })
+      sendCommentEvent(service, { event: 'thread.replied', slug: body.slug, thread: result.thread, message: result.message, principal })
       return json(res, 200, { thread: result.thread, message: result.message, rev, agent: mentionsAgent(body.text) })
     }
     if (path === '/app/comments/status') {

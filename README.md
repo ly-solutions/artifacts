@@ -178,6 +178,7 @@ names the variable to fix. The essentials:
 | `ARTIFACTS_SESSION_URL` | | link template for the conversation a document came from |
 | `ARTIFACTS_FRAME_ANCESTORS` | | origins allowed to embed the reader |
 | `ARTIFACTS_WEBHOOK_URL` | | notified on every change, HMAC-signed |
+| `ARTIFACTS_HUB_EVENTS_URL`, `ARTIFACTS_HUB_EVENTS_SECRET` | | harnessly hub that receives comment events (new thread, reply) |
 
 The full reference, including every OIDC, proxy, content-policy and limit option: [docs/configuration.md](docs/configuration.md).
 

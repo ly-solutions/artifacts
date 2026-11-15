@@ -102,6 +102,8 @@ Share links work in every mode: they are signed with `ARTIFACTS_SECRET` and open
 | `ARTIFACTS_CORS_ORIGINS` | empty | Origins allowed to call the API from a browser (bearer tokens only, no cookies). |
 | `ARTIFACTS_WEBHOOK_URL` | empty | URL that receives a POST for every publish, metadata change, share, unshare and delete. |
 | `ARTIFACTS_WEBHOOK_SECRET` | empty | When set, each webhook carries `X-Artifacts-Signature: sha256=<HMAC of the body>`. |
+| `ARTIFACTS_HUB_EVENTS_URL` | empty | URL of the harnessly hub that receives a POST for every new comment thread and every reply (people and the agent), so a mention of `@harnessly` reaches the agent even when nobody has the document open. Empty: nothing is sent. Fire-and-forget, 5 s timeout, failures only in the log. |
+| `ARTIFACTS_HUB_EVENTS_SECRET` | empty | Sent as `X-Boards-Webhook-Secret` with each of those requests. |
 | `ARTIFACTS_SHARE_TTL` | empty (no expiry) | Default lifetime of a share link when the request does not set one. |
 
 ## Content policy

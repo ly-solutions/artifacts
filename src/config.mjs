@@ -132,6 +132,11 @@ export function loadConfig(env = process.env) {
       url: env.ARTIFACTS_WEBHOOK_URL || '',
       secret: env.ARTIFACTS_WEBHOOK_SECRET || '',
     },
+    // Where comment events go: the hub of harnessly, which takes them to the machine of the person asked. Empty url: nothing is sent.
+    hubEvents: {
+      url: env.ARTIFACTS_HUB_EVENTS_URL || '',
+      secret: env.ARTIFACTS_HUB_EVENTS_SECRET || '',
+    },
     plugins: {
       modules: list(env.ARTIFACTS_PLUGINS),
       widgetTimeout: parseDuration(env.ARTIFACTS_WIDGET_TIMEOUT || '5s', 'ARTIFACTS_WIDGET_TIMEOUT'),
