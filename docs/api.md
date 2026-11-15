@@ -248,6 +248,19 @@ fetch anywhere unless `ARTIFACTS_CONTENT_CONNECT_SRC` allows it, nor frame anyth
 `ARTIFACTS_CONTENT_FRAME_SRC` allows it. A framed reader page can switch the theme of a
 wrapped document with `postMessage({type: "artifacts:theme", theme: "light" | "dark" | "auto"}, "*")`.
 
+## App view routes (`/app/*`)
+
+Used by the app view's own page (`ARTIFACTS_APP_VIEW=true`); they take the session cookie, not a bearer token, and
+writes must come from the server's own origin. Not a stable public API; agents use the MCP tools.
+
+| Route | Does |
+|---|---|
+| `GET /app/docs` | the catalog for the list (kind, preview, rights) |
+| `GET /app/doc?slug=` | a document with its versions, rights and the view's content URL |
+| `GET /app/state?slug=` | a cheap poll: current version and comments revision |
+| `POST /app/docs`, `PUT/PATCH/DELETE /app/doc`, `POST /app/restore` | create, save a new version (`baseVersion`), rename, delete, restore |
+| `GET /app/comments?slug=` and `POST /app/comments[/reply\|/status\|/react\|/delete\|/undo]` | threads of comments, replies, resolve, reactions, undo of an agent's edit |
+
 ## Plugin routes
 
 Plugins add routes under `/x/…`, `/api/v1/x/…` and `/a/{slug}/x/…` only; see [plugins.md](plugins.md).

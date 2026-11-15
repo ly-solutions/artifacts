@@ -2,6 +2,7 @@
  * HTTP server: UI pages, the JSON API under /api/v1, the sandboxed content
  * endpoint, and the routes of the previous contract (`POST /a`, `PATCH /a/{slug}`).
  */
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, normalize } from 'node:path'
@@ -11,6 +12,8 @@ import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canShar
 import { HubRightsError, HubUnavailableError } from './auth/harnessly.mjs'
 import { parseDuration } from './config.mjs'
 import { unifiedDiff } from './diff.mjs'
+import { createAppApi } from './app-api.mjs'
+import { CommentStore } from './comments.mjs'
 import { createMcpHandler } from './mcp.mjs'
 import { PluginHost, isApiErrorLike, loadPluginModules } from './plugins.mjs'
 import { renderVersion } from './render/doc.mjs'
@@ -20,6 +23,7 @@ import { ApiError, ArtifactService } from './service.mjs'
 import { isValidSlug, normalizeTags } from './text.mjs'
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url))
+const FRAME_EDITOR = readFileSync(new URL('../web/docs/frame-editor.js', import.meta.url), 'utf8')
 const MAX_PAGE = 500
 const CATALOG_PAGE = 200
 const TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.txt': 'text/plain; charset=utf-8' }
@@ -85,12 +89,12 @@ export async function createApp(config, { storage, log = createLogger(config.log
   const ancestors = config.embed.frameAncestors
   const jsonLimit = Math.ceil(config.content.maxBytes * 1.5) + 256 * 1024
 
-  const uiCsp = (frameAncestors) =>
+  const uiCsp = (frameAncestors, images = "'self' data:") =>
     [
       "default-src 'self'",
       "script-src 'self'",
       "style-src 'self'",
-      "img-src 'self' data:",
+      `img-src ${images}`,
       "font-src 'self'",
       "connect-src 'self'",
       "frame-src 'self'",
@@ -130,8 +134,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
   const json = (res, status, body, headers = {}) =>
     send(res, status, `${JSON.stringify(body, null, 2)}\n`, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers })
 
-  const html = (res, status, body, { frameAncestors = "'none'", headers = {} } = {}) =>
-    send(res, status, body, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': uiCsp(frameAncestors), ...headers })
+  const html = (res, status, body, { frameAncestors = "'none'", headers = {}, images } = {}) =>
+    send(res, status, body, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': uiCsp(frameAncestors, images), ...headers })
 
   const redirect = (res, location, headers = {}) => send(res, 302, '', { location, 'cache-control': 'no-store', ...headers })
 
@@ -204,7 +208,9 @@ export async function createApp(config, { storage, log = createLogger(config.log
   /** Sign-in passes of the app view already used, by id, until they expire (in this process). */
   const usedPasses = new Map()
 
-  const mcp = createMcpHandler({ config, service, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug), enterPass: (person) => issueEnterPass(service.signer, person) })
+  const comments = new CommentStore(storage)
+  const appApi = createAppApi({ config, service, comments, docAccess, searchFor, json, readJson, checkSameOrigin, issueViewTicket: (slug) => issueViewTicket(service.signer, slug) })
+  const mcp = createMcpHandler({ config, service, comments, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug), enterPass: (person) => issueEnterPass(service.signer, person) })
 
   // ---- route handlers --------------------------------------------------------
 
@@ -327,6 +333,10 @@ export async function createApp(config, { storage, log = createLogger(config.log
   const selectionReporter = () =>
     `<script>(function(){var last='',timer=0,to=${JSON.stringify(publicOrigin)};function send(){var s=window.getSelection(),t=s&&s.rangeCount?String(s).replace(/\\s+/g,' ').trim().slice(0,600):'',r=null;if(t){var b=s.getRangeAt(0).getBoundingClientRect();r={x:Math.round(b.left),y:Math.round(b.top),w:Math.round(b.width),h:Math.round(b.height)}}if(t===last)return;last=t;window.parent.postMessage({type:'doc-selection',text:t,rect:r},to)}document.addEventListener('selectionchange',function(){clearTimeout(timer);timer=setTimeout(send,250)})})()</script>`
 
+  /** The editor's half inside the frame (web/docs/frame-editor.js): asleep until the page around it sends a mode. */
+  const frameEditor = (wrapped) =>
+    `<script>${FRAME_EDITOR.replace('__DX_ORIGIN__', () => JSON.stringify(publicOrigin).replace(/</g, '\\u003c')).replace('__DX_WRAPPED__', wrapped ? 'true' : 'false')}</script>`
+
   async function serveContent(res, { meta, ref, theme, download, shared = false, appView = false }) {
     const { version, n } = service.resolveVersion(meta, ref)
     const content = await service.store.readVersionContent(meta.slug, version)
@@ -345,7 +355,10 @@ export async function createApp(config, { storage, log = createLogger(config.log
       page.html = await host.renderWidgets(page.html, { ...context, phase: 'read' })
       if (host.readHooks.length) page.html = await host.runReadHooks({ html: page.html }, { ...context, artifact: service.present(meta) })
     }
-    if (appView) page.html = /<\/body>/i.test(page.html) ? page.html.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${selectionReporter()}</body>`) : page.html + selectionReporter()
+    if (appView) {
+      const bridge = `${selectionReporter()}${frameEditor(page.wrapped)}`
+      page.html = /<\/body>/i.test(page.html) ? page.html.replace(/<\/body>(?![\s\S]*<\/body>)/i, () => `${bridge}</body>`) : page.html + bridge
+    }
     const headers = { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': contentCsp(), 'cache-control': 'no-store', 'x-artifact-version': String(n) }
     if (download === 'html') headers['content-disposition'] = `attachment; filename="${meta.slug}-v${n}.html"`
     send(res, 200, page.html, headers)
@@ -441,7 +454,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
     // The app view for harnessly: the page; its data is /app/docs below, by the session cookie.
     if (path === '/app' && method === 'GET') {
       if (!config.appView.enabled) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: 'There is nothing at this address.', principal: ANONYMOUS }))
-      return html(res, 200, appViewPage({ siteName: config.siteName }), { frameAncestors: ancestors.length ? ancestors.join(' ') : "'none'" })
+      // Pictures in a text document may come from anywhere on https; nothing else is loosened.
+      return html(res, 200, appViewPage({ siteName: config.siteName }), { frameAncestors: ancestors.length ? ancestors.join(' ') : "'none'", images: "'self' data: https:" })
     }
 
     if (path.startsWith('/api/') && cors(req, res) && method === 'OPTIONS') return send(res, 204, '')
@@ -488,37 +502,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       usedPasses.set(pass.id, pass.expires)
       return json(res, 200, { ok: true }, { 'set-cookie': auth.sessionCookie({ sub: pass.sub, name: pass.name, email: pass.email, role: 'member', hub: true }) })
     }
-    if (config.appView.enabled && path === '/app/docs' && method === 'GET') {
-      if (principal.via === 'bearer' || (!canRead(principal) && !principal.hub)) return json(res, 401, { error: 'unauthorized', hint: 'sign in: the session cookie is missing or expired' })
-      const limit = Math.min(Math.max(Math.floor(Number(url.searchParams.get('limit') ?? 50)) || 50, 1), 50)
-      const result = await searchFor(principal, { q: url.searchParams.get('q') ?? '', tags: [], limit, offset: 0 })
-      return json(res, 200, {
-        total: result.total,
-        items: result.items.map((item) => ({
-          slug: item.slug,
-          title: item.title,
-          description: item.description,
-          tags: item.tags,
-          author: item.author,
-          updatedAt: item.updatedAt,
-          url: item.viewUrl,
-          mine: Boolean(item.author && (item.author === principal.name || (principal.email && item.author === principal.email))),
-        })),
-      })
-    }
-
-    // One document for the view: its title and its content's address with a short ticket (the content frame is
-    // sandboxed, so it does not rely on the cookie).
-    if (config.appView.enabled && path === '/app/doc' && method === 'GET') {
-      if (principal.via === 'bearer' || (!canRead(principal) && !principal.hub)) return json(res, 401, { error: 'unauthorized', hint: 'sign in: the session cookie is missing or expired' })
-      const slug = url.searchParams.get('slug') ?? ''
-      if (!isValidSlug(slug)) return json(res, 404, { error: 'not_found' })
-      await docAccess(principal, slug)
-      const { meta } = await service.get(slug)
-      const artifact = service.present(meta)
-      const theme = ['dark', 'light'].includes(url.searchParams.get('theme')) ? `&theme=${url.searchParams.get('theme')}` : ''
-      return json(res, 200, { slug, title: artifact.title, url: artifact.viewUrl, contentUrl: `/a/${slug}/raw?t=${encodeURIComponent(issueViewTicket(service.signer, slug))}${theme}` })
-    }
+    if (config.appView.enabled && path.startsWith('/app/') && (await appApi(req, res, url, principal, path, method))) return
 
     // ---- sign-in -------------------------------------------------------------
     if (path === '/login') {

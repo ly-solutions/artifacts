@@ -7,7 +7,9 @@
  */
 import { readFileSync } from 'node:fs'
 
+import { kindOfMeta, replaceOnce } from './app-api.mjs'
 import { canRead } from './auth/index.mjs'
+import { CommentError, MAX_TEXT } from './comments.mjs'
 import { HubRightsError } from './auth/harnessly.mjs'
 import { parseDuration } from './config.mjs'
 import { ApiError } from './service.mjs'
@@ -22,6 +24,7 @@ const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 const INSTRUCTIONS =
   'A catalog of versioned documents. doc_find searches the documents you may read, doc_show reads one, ' +
   'doc_versions lists its versions, doc_share opens or closes a share link. ' +
+  'Comments: doc_comments reads the threads of a document, doc_reply answers one, doc_comment starts one, doc_edit changes a fragment of the text. ' +
   'There is no publishing here: publish and update documents through the harnessly hub (doc.publish).'
 
 const slugProp = { type: 'string', description: 'Document slug, e.g. release-notes-a1b2c3 (the last part of its /a/<slug> address).' }
@@ -87,6 +90,71 @@ export const TOOLS = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: 'doc_comments',
+    title: 'Comments of a document',
+    description: 'The threads of comments on a document: where each is anchored (the quoted words, or the page element), who said what and whether it is open. A person who writes @агент in a thread is asking you; answer with doc_reply, and change the text with doc_edit when they ask for a change.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: slugProp,
+        thread: { type: 'string', description: 'Only this thread (its id from an earlier answer).' },
+        status: { type: 'string', enum: ['open', 'resolved', 'all'], description: 'open (default), resolved or all.' },
+      },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'doc_reply',
+    title: 'Answer a thread',
+    description: 'Answer a thread of comments as the agent; it shows in the thread under «Агент». With resolve: true the thread is closed after the answer. Needs the right to comment.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: slugProp,
+        thread: { type: 'string', description: 'The thread id from doc_comments.' },
+        text: { type: 'string', description: `The answer, up to ${MAX_TEXT} characters; short, in the thread's language.` },
+        resolve: { type: 'boolean', description: 'Close the thread after the answer.' },
+      },
+      required: ['slug', 'thread', 'text'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'doc_comment',
+    title: 'Comment on a fragment',
+    description: 'Start a thread as the agent on a fragment of the text (quote: the exact words) or on the whole document. Needs the right to comment.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: slugProp, text: { type: 'string' }, quote: { type: 'string', description: 'The exact words of the fragment the comment is about; omit for the whole document.' } },
+      required: ['slug', 'text'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'doc_edit',
+    title: 'Change a fragment of a document',
+    description:
+      'Replace one fragment of the current version with other text: a new version of the same document, the change is highlighted for the person and they can undo it. `find` must occur exactly once in the source (Markdown, or the HTML of a page), so quote enough words. With thread, the change and your reply are recorded in that thread. Needs the right to edit. For a whole new text publish through the hub instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: slugProp,
+        find: { type: 'string', description: 'The exact fragment to replace, as doc_show gives it.' },
+        replace: { type: 'string', description: 'What stands there instead (may be empty to delete).' },
+        thread: { type: 'string', description: 'The thread this change answers.' },
+        reply: { type: 'string', description: 'What to say in the thread about the change (required with thread).' },
+        note: { type: 'string', description: 'A line for the version history.' },
+      },
+      required: ['slug', 'find', 'replace'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
     name: 'doc_share',
     title: 'Share a document',
     description: 'Open a document by link (public: true, the default) and get the link, or close it and revoke every link (public: false). Needs the right to edit the document.',
@@ -108,7 +176,7 @@ class ToolError extends Error {}
 
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } })
 
-export function createMcpHandler({ config, service, searchFor, docAccess, viewTicket, enterPass }) {
+export function createMcpHandler({ config, service, comments, searchFor, docAccess, viewTicket, enterPass }) {
   const publicOrigin = new URL(config.publicUrl).origin
 
   const write = (res, status, body, headers = {}) => {
@@ -204,6 +272,60 @@ export function createMcpHandler({ config, service, searchFor, docAccess, viewTi
       return { slug, versions: service.versionsOf(meta) }
     },
 
+    async doc_comments(principal, args) {
+      const slug = slugOf(args)
+      await docAccess(principal, slug)
+      const doc = await comments.list(slug)
+      const status = args.status ?? 'open'
+      const threads = doc.threads
+        .filter((t) => (typeof args.thread === 'string' ? t.id === args.thread : status === 'all' || t.status === status))
+        .map((t) => ({
+          id: t.id,
+          status: t.status,
+          anchor: t.anchor,
+          messages: t.messages.map((m) => ({ id: m.id, author: m.author.name, by: m.author.kind, at: m.at, text: m.text })),
+        }))
+      return { slug, threads }
+    },
+
+    async doc_reply(principal, args) {
+      const slug = slugOf(args)
+      await docAccess(principal, slug)
+      const { result } = await comments.reply(slug, String(args.thread ?? ''), { text: args.text, author: { name: 'Агент', kind: 'agent' } })
+      if (args.resolve === true) await comments.setStatus(slug, result.thread.id, 'resolved', 'Агент')
+      return { slug, thread: result.thread.id, message: result.message.id, resolved: args.resolve === true }
+    },
+
+    async doc_comment(principal, args) {
+      const slug = slugOf(args)
+      await docAccess(principal, slug)
+      const quote = typeof args.quote === 'string' ? args.quote : ''
+      const { result } = await comments.newThread(slug, { anchor: quote ? { kind: 'text', quote } : { kind: 'doc' }, text: args.text, author: { name: 'Агент', kind: 'agent' } })
+      return { slug, thread: result.id }
+    },
+
+    async doc_edit(principal, args) {
+      const slug = slugOf(args)
+      await docAccess(principal, slug, { need: 'write' })
+      if (typeof args.replace !== 'string') throw new ToolError('replace: the new text of the fragment (may be empty)')
+      if (typeof args.thread === 'string' && !(typeof args.reply === 'string' && args.reply.trim())) throw new ToolError('reply: say in the thread what you changed')
+      const { meta } = await service.get(slug)
+      const kind = kindOfMeta(meta)
+      const content = await service.readContent(slug, null)
+      const source = kind === 'text' ? (content.markdown ?? '') : (content.html ?? '')
+      const next = replaceOnce(source, args.find, args.replace)
+      const publish = { slug, author: 'Агент', baseVersion: content.n, note: typeof args.note === 'string' ? args.note.slice(0, 200).replace(/[\r\n]+/g, ' ') : 'Правка агента' }
+      if (kind === 'text') publish.markdown = next
+      else publish.html = next
+      const result = await service.publish(publish, { name: 'Агент', role: 'editor', via: 'bearer' })
+      let edit = null
+      if (typeof args.thread === 'string') {
+        const { result: made } = await comments.reply(slug, args.thread, { text: args.reply, author: { name: 'Агент', kind: 'agent' }, edit: { from: content.n, to: result.version.n, before: args.find, after: args.replace } })
+        edit = made.message.edit ?? null
+      }
+      return { slug, version: result.version.n, edit }
+    },
+
     async doc_share(principal, args) {
       const slug = slugOf(args)
       await docAccess(principal, slug, { need: 'share' })
@@ -233,6 +355,7 @@ export function createMcpHandler({ config, service, searchFor, docAccess, viewTi
       let message
       if (error instanceof ToolError) message = error.message
       else if (error instanceof HubRightsError) message = 'the hub did not answer who may read this document; try again in a minute'
+      else if (error instanceof CommentError) message = error.hint ?? error.code
       else if (error instanceof ApiError && error.code === 'not_found') message = 'no such document, or you may not read it'
       else if (error instanceof ApiError) message = error.hint ?? error.code
       else throw error

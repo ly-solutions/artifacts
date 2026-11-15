@@ -1,0 +1,4 @@
+/* Geist, the font the other pages of this service already carry (OFL, see web/fonts/OFL.txt). */
+@font-face { font-family: "Geist"; src: url("/static/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/static/fonts/geist-500.woff2") format("woff2"); font-weight: 500 700; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/static/fonts/geist-mono-500.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }

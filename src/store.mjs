@@ -120,6 +120,7 @@ export class ArtifactStore {
     // Manifest first: from that moment the artifact is gone for every reader, and
     // leftover content objects are unreachable garbage rather than a half-deleted document.
     await this.storage.delete(manifestKey(slug))
+    await this.storage.delete(`comments/${slug}.json`)
     const keys = []
     for await (const item of this.storage.list(`content/${slug}/`)) keys.push(item.key)
     for (const key of keys) await this.storage.delete(key)

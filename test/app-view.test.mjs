@@ -54,8 +54,8 @@ describe('app view on', () => {
     assert.equal(page.status, 200)
     assert.match(page.headers.get('content-security-policy'), new RegExp(`frame-ancestors ${HOST}(;|$)`))
     const shim = page.text.indexOf('hl/bridge-shim.js')
-    assert.ok(shim > 0 && shim < page.text.indexOf('hl/app-sdk.classic.js') && shim < page.text.indexOf('app-view.js'))
-    assert.equal((await app.request('GET', '/static/app-view.js', { token: null, raw: true })).status, 200)
+    assert.ok(shim > 0 && shim < page.text.indexOf('hl/app-sdk.classic.js') && shim < page.text.indexOf('docs/app.js'))
+    assert.equal((await app.request('GET', '/static/docs/app.js', { token: null, raw: true })).status, 200)
   })
 
   it('opens a document by a short ticket of its own', async () => {
