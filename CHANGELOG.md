@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Comment events for the harnessly hub: with `ARTIFACTS_HUB_EVENTS_URL` set, every new thread and reply (from people in
+  the app and from the agent through MCP) is sent there as `{kind: "doc", event: "thread.created" | "thread.replied", …}`
+  with the `X-Boards-Webhook-Secret` header (`ARTIFACTS_HUB_EVENTS_SECRET`), so `@harnessly` reaches the agent while the
+  document is closed. `@harnessly` now also counts as a call to the agent. Nothing is sent when the URL is empty.
 - In a harnessly installation a person makes, copies, renames and trashes documents from the list and from the open
   document: the requests go to the hub (`/api/platform/docs`) as that person, with the documents' access token and the
   person's own app token (`X-Harnessly-Token`, kept in the session at sign-in, never given to the page). A trash is

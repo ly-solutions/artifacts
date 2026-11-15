@@ -68,8 +68,8 @@ export const personId = (principal) => (typeof principal?.sub === 'string' && pr
 export const mayComment = (access, principal) =>
   principal.hub ? access.right === 'comment' || access.right === 'edit' || access.write === true : access.read === true
 
-/** Whether a text calls the agent: «@агент», «@agent». */
-export const mentionsAgent = (text) => /(^|[\s(,.;:!?])@(агент|agent)(?![\p{L}\p{N}_])/iu.test(String(text ?? ''))
+/** Whether a text calls the agent: «@агент», «@agent», «@harnessly». */
+export const mentionsAgent = (text) => /(^|[\s(,.;:!?])@(агент|agent|harnessly)(?![\p{L}\p{N}_])/iu.test(String(text ?? ''))
 
 export class CommentStore {
   constructor(storage) {

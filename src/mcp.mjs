@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 
 import { kindOfMeta, replaceOnce } from './app-api.mjs'
 import { canRead } from './auth/index.mjs'
+import { sendCommentEvent } from './hub-events.mjs'
 import { CommentError, MAX_TEXT, mayComment } from './comments.mjs'
 import { HubRightsError } from './auth/harnessly.mjs'
 import { parseDuration } from './config.mjs'
@@ -299,6 +300,7 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
       const slug = slugOf(args)
       await commentAccess(principal, slug)
       const { result } = await comments.reply(slug, String(args.thread ?? ''), { text: args.text, author: { name: 'Агент', kind: 'agent' } })
+      sendCommentEvent(service, { event: 'thread.replied', slug, thread: result.thread, message: result.message, principal: null })
       if (args.resolve === true) await comments.setStatus(slug, result.thread.id, 'resolved', 'Агент')
       return { slug, thread: result.thread.id, message: result.message.id, resolved: args.resolve === true }
     },
@@ -308,6 +310,7 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
       await commentAccess(principal, slug)
       const quote = typeof args.quote === 'string' ? args.quote : ''
       const { result } = await comments.newThread(slug, { anchor: quote ? { kind: 'text', quote } : { kind: 'doc' }, text: args.text, author: { name: 'Агент', kind: 'agent' } })
+      sendCommentEvent(service, { event: 'thread.created', slug, thread: result, message: result.messages[0], principal: null })
       return { slug, thread: result.id }
     },
 
@@ -333,6 +336,7 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
       if (typeof args.thread === 'string') {
         const { result: made } = await comments.reply(slug, args.thread, { text: args.reply, author: { name: 'Агент', kind: 'agent' }, edit: { from: content.n, to: result.version.n, before: args.find, after: args.replace } })
         edit = made.message.edit ?? null
+        sendCommentEvent(service, { event: 'thread.replied', slug, thread: made.thread, message: made.message, principal: null })
       }
       const out = { slug, version: result.version.n, edit }
       if (kind === 'html') {
