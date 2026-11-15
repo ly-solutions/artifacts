@@ -49,7 +49,12 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
     share: access.share === true,
   })
 
-  const hubUrl = config.auth?.mode === 'harnessly' ? String(config.auth.harnessly?.issuer ?? '').replace(/\/+$/, '') : ''
+  const trimSlashes = (text) => {
+    let end = text.length
+    while (end > 0 && text[end - 1] === '/') end -= 1
+    return text.slice(0, end)
+  }
+  const hubUrl = config.auth?.mode === 'harnessly' ? trimSlashes(String(config.auth.harnessly?.issuer ?? '')) : ''
   const shareUrlOf = (slug, principal) => (hubUrl && principal.hub ? `${hubUrl}/docs/${encodeURIComponent(slug)}?share=1` : null)
 
   const canCreate = (principal) => (principal.hub ? Boolean(hubDocs && principal.token) : canWrite(principal))
