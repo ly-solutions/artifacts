@@ -248,6 +248,12 @@ fetch anywhere unless `ARTIFACTS_CONTENT_CONNECT_SRC` allows it, nor frame anyth
 `ARTIFACTS_CONTENT_FRAME_SRC` allows it. A framed reader page can switch the theme of a
 wrapped document with `postMessage({type: "artifacts:theme", theme: "light" | "dark" | "auto"}, "*")`.
 
+## The trash
+
+`POST /api/v1/artifacts/{slug}/trash` with `{"trashed": true}` (or `false`) tells the service that the harnessly hub
+put the document into its trash (or took it out). Needs the editor service token. A trashed document answers 404 to
+everyone but a service token, leaves the catalog and its public links stop working; nothing is deleted.
+
 ## App view routes (`/app/*`)
 
 Used by the app view's own page (`ARTIFACTS_APP_VIEW=true`); they take the session cookie, not a bearer token, and
@@ -258,7 +264,8 @@ writes must come from the server's own origin. Not a stable public API; agents u
 | `GET /app/docs` | the catalog for the list (kind, preview, rights) |
 | `GET /app/doc?slug=` | a document with its versions, rights and the view's content URL |
 | `GET /app/state?slug=` | a cheap poll: current version and comments revision |
-| `POST /app/docs`, `PUT/PATCH/DELETE /app/doc`, `POST /app/restore` | create, save a new version (`baseVersion`), rename, delete, restore |
+| `POST /app/docs`, `PUT/PATCH/DELETE /app/doc`, `POST /app/restore` | create, save a new version (`baseVersion`), rename, delete (into the hub's trash for a hub person), restore a version |
+| `POST /app/doc/duplicate`, `GET /app/trash`, `POST /app/trash/restore` | a copy; what the person may take out of the hub's trash; take it out |
 | `GET /app/comments?slug=` and `POST /app/comments[/reply\|/status\|/react\|/delete\|/undo]` | threads of comments, replies, resolve, reactions, undo of an agent's edit |
 
 ## Plugin routes

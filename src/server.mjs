@@ -20,6 +20,7 @@ import { renderVersion } from './render/doc.mjs'
 import { enterPassPerson, issueEnterPass, issueViewTicket, viewTicketValid } from './signing.mjs'
 import { appViewPage, catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
 import { ApiError, ArtifactService } from './service.mjs'
+import { TrashStore } from './trash.mjs'
 import { isValidSlug, normalizeTags } from './text.mjs'
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url))
@@ -183,7 +184,17 @@ export async function createApp(config, { storage, log = createLogger(config.log
    * Search as the caller sees the catalog: a hub person gets only the documents the hub lets them read,
    * among the best HUB_SEARCH_SCAN matches (a bounded number of rights requests per search).
    */
+  /** The trash is invisible to everyone but a service token: out of the lists, and a 404 where it is opened. */
   async function searchFor(principal, query) {
+    const result = await searchUnfiltered(principal, query)
+    if (principal.static) return result
+    const gone = await trash.slugs()
+    if (!gone.size) return result
+    const items = result.items.filter((item) => !gone.has(item.slug))
+    return { ...result, items, total: Math.max(0, result.total - (result.items.length - items.length)) }
+  }
+
+  async function searchUnfiltered(principal, query) {
     if (!principal.hub) return service.search(query)
     const limit = query.limit ?? 50
     const offset = query.offset ?? 0
@@ -197,6 +208,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
 
   /** The caller's rights on one document; a hub person who may not read it gets a 404, as if it did not exist. */
   async function docAccess(principal, slug, { need = 'read' } = {}) {
+    if (!principal.static && (await trash.has(slug))) throw new ApiError(404, 'not_found')
     const access = await auth.docAccessOne(principal, slug)
     if (principal.hub && !access.read) throw new ApiError(404, 'not_found')
     if (need === 'read' && !access.read) throw new ApiError(403, 'forbidden', { hint: 'this token or account cannot read documents' })
@@ -209,8 +221,19 @@ export async function createApp(config, { storage, log = createLogger(config.log
   const usedPasses = new Map()
 
   const comments = new CommentStore(storage)
-  const appApi = createAppApi({ config, service, comments, docAccess, searchFor, json, readJson, checkSameOrigin, issueViewTicket: (slug) => issueViewTicket(service.signer, slug) })
-  const mcp = createMcpHandler({ config, service, comments, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug), enterPass: (person) => issueEnterPass(service.signer, person) })
+  const trash = new TrashStore(storage)
+  /** What the hub says a person's sign-in pass carries: its token, kept here (never in the page) until the pass is used. */
+  const passTokens = new Map()
+  const appApi = createAppApi({ config, service, comments, trash, hubDocs: auth.hubDocs, forgetRights: (slug) => auth.hubRights?.forget(slug), docAccess, searchFor, json, readJson, checkSameOrigin, issueViewTicket: (slug) => issueViewTicket(service.signer, slug) })
+  const mcp = createMcpHandler({ config, service, comments, searchFor, docAccess, viewTicket: (slug) => issueViewTicket(service.signer, slug), enterPass: (person) => {
+    const pass = issueEnterPass(service.signer, person)
+    const made = enterPassPerson(service.signer, pass)
+    if (made && person.token) {
+      for (const [id, entry] of passTokens) if (entry.expires * 1000 <= Date.now()) passTokens.delete(id)
+      passTokens.set(made.id, { token: person.token, expires: made.expires })
+    }
+    return pass
+  } })
 
   // ---- route handlers --------------------------------------------------------
 
@@ -464,6 +487,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     const sharedMatch = /^\/s\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)(\/raw)?$/.exec(path)
     if (sharedMatch && method === 'GET') {
       const meta = await service.resolveLinkToken(sharedMatch[1])
+      if (meta && (await trash.has(meta.slug))) return json(res, 404, { error: 'not_found' })
       if (!meta) return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Link not available', message: 'This link has expired or was revoked, or it never existed.', principal: ANONYMOUS }))
       if (sharedMatch[2]) return serveContent(res, { meta, ref: url.searchParams.get('v'), theme: url.searchParams.get('theme'), download: url.searchParams.get('download'), shared: true })
       const { n } = service.resolveVersion(meta, url.searchParams.get('v'))
@@ -479,6 +503,13 @@ export async function createApp(config, { storage, log = createLogger(config.log
     } catch (error) {
       if (error.status === 401) return json(res, 401, { error: 'unauthorized', hint: 'the bearer token is not valid' }, { 'www-authenticate': 'Bearer error="invalid_token"' })
       throw error
+    }
+
+    // ---- a document in the hub's trash opens for nobody but a service token ----
+    const trashedSlug = /^\/(?:a|embed|api\/v1\/artifacts)\/([a-z0-9][a-z0-9-]*)(?:\/|$)/.exec(path)?.[1]
+    if (trashedSlug && !principal.static && (await trash.has(trashedSlug))) {
+      if (path.startsWith('/api/') || !wantsHtml(req)) return json(res, 404, { error: 'not_found' })
+      return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: `There is no artifact “${trashedSlug}”.`, principal }))
     }
 
     // ---- plugin routes (their own namespaces, see docs/plugins.md) ------------
@@ -500,7 +531,9 @@ export async function createApp(config, { storage, log = createLogger(config.log
       for (const [id, expires] of usedPasses) if (expires * 1000 <= now) usedPasses.delete(id)
       if (!pass || usedPasses.has(pass.id)) return json(res, 401, { error: 'unauthorized', hint: 'the sign-in pass is wrong, expired or already used' })
       usedPasses.set(pass.id, pass.expires)
-      return json(res, 200, { ok: true }, { 'set-cookie': auth.sessionCookie({ sub: pass.sub, name: pass.name, email: pass.email, role: 'member', hub: true }) })
+      const stashed = passTokens.get(pass.id)
+      passTokens.delete(pass.id)
+      return json(res, 200, { ok: true }, { 'set-cookie': auth.sessionCookie({ sub: pass.sub, name: pass.name, email: pass.email, role: 'member', hub: true, token: stashed?.token }) })
     }
     if (config.appView.enabled && path.startsWith('/app/') && (await appApi(req, res, url, principal, path, method))) return
 
@@ -582,6 +615,15 @@ export async function createApp(config, { storage, log = createLogger(config.log
         const slug = decodeURIComponent(match[1])
         if (!isValidSlug(slug)) throw new ApiError(404, 'not_found')
         const sub = match[2] ?? ''
+        // The hub tells that it put a document into its trash or took it out (a service token only).
+        if (sub === '/trash' && method === 'POST') {
+          if (!principal.static || principal.role !== 'editor') throw new ApiError(403, 'forbidden', { hint: 'only a service token tells the trash' })
+          const body = await readJson(req, 4096)
+          if (typeof body.trashed !== 'boolean') throw new ApiError(400, 'invalid', { problems: ['trashed: true or false'] })
+          await service.get(slug)
+          await trash.set(slug, body.trashed, typeof body.by === 'string' ? body.by.slice(0, 120) : null)
+          return json(res, 200, { slug, trashed: body.trashed })
+        }
         if (principal.hub && sub !== '/access') {
           // A hub person: the hub decides per document; publishing and deleting stay with the hub.
           const write = (sub === '' && method === 'PATCH') || sub === '/share'

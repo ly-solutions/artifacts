@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- In a harnessly installation a person makes, copies, renames and trashes documents from the list and from the open
+  document: the requests go to the hub (`/api/platform/docs`) as that person, with the documents' access token and the
+  person's own app token (`X-Harnessly-Token`, kept in the session at sign-in, never given to the page). A trash is
+  quiet: «В корзину» with «Отменить», and «Корзина» in the list's «⋯» to take things out again.
+- The trash is respected here: a document in it answers 404 to everyone but a service token, leaves the lists and the
+  public links. The flag is kept in `trash.json` and set by `POST /api/v1/artifacts/{slug}/trash` (`{trashed: bool}`,
+  service token) or by a trash made through this service.
+
+### Fixed
+
+- A document in the hub's trash no longer opens by its address for a person who signed in directly (single sign-on).
+
+### Added
+
 - Text documents: underline and colour of words and of their background from the selection bar. They are kept in the
   Markdown as inline HTML (`<u>`, `<span style="color:…;background-color:…">`); the view lets only those two
   properties through, and only real colours (no `url()`, no `var()`).

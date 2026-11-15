@@ -19,7 +19,7 @@
 import { randomBytes } from 'node:crypto'
 
 import { ipInCidrs, parseCidr } from './cidr.mjs'
-import { HubRights, HubTokenVerifier, HubUnavailableError, capabilitiesOf, isAppToken } from './harnessly.mjs'
+import { HubDocs, HubRights, HubTokenVerifier, HubUnavailableError, capabilitiesOf, isAppToken } from './harnessly.mjs'
 import { OidcClient } from './oidc.mjs'
 import { safeEqual } from '../signing.mjs'
 
@@ -56,9 +56,11 @@ export class Authenticator {
       const { issuer, accessToken, rightsTtl } = this.auth.harnessly
       this.hub = new HubTokenVerifier({ issuer, audience: new URL(config.publicUrl).origin, fetchImpl })
       this.hubRights = new HubRights({ issuer, accessToken, ttlMs: rightsTtl * 1000, fetchImpl })
+      this.hubDocs = new HubDocs({ issuer, accessToken, fetchImpl })
     } else {
       this.hub = null
       this.hubRights = null
+      this.hubDocs = null
     }
     this.attempts = new Map()
   }
@@ -73,9 +75,9 @@ export class Authenticator {
   }
 
   staticToken(token) {
-    if (this.auth.tokens.some((expected) => safeEqual(token, expected))) return { role: 'editor', name: 'token', via: 'bearer' }
-    if (this.auth.readTokens.some((expected) => safeEqual(token, expected))) return { role: 'viewer', name: 'read-token', via: 'bearer' }
-    if (this.auth.shareTokens.some((expected) => safeEqual(token, expected))) return { role: 'sharer', name: 'share-token', via: 'bearer' }
+    if (this.auth.tokens.some((expected) => safeEqual(token, expected))) return { role: 'editor', name: 'token', via: 'bearer', static: true }
+    if (this.auth.readTokens.some((expected) => safeEqual(token, expected))) return { role: 'viewer', name: 'read-token', via: 'bearer', static: true }
+    if (this.auth.shareTokens.some((expected) => safeEqual(token, expected))) return { role: 'sharer', name: 'share-token', via: 'bearer', static: true }
     return null
   }
 
@@ -91,7 +93,7 @@ export class Authenticator {
           const claims = await this.hub.verify(bearer)
           const email = typeof claims.email === 'string' ? claims.email : undefined
           const name = (typeof claims.name === 'string' && claims.name) || email || claims.sub
-          return { role: 'member', name, email, sub: claims.sub, hub: true, via: 'bearer' }
+          return { role: 'member', name, email, sub: claims.sub, hub: true, via: 'bearer', token: bearer }
         } catch (error) {
           if (error instanceof HubUnavailableError) throw error
           this.log('info', 'hub app token rejected', { error: error.message })
@@ -131,7 +133,7 @@ export class Authenticator {
     if (cookie) {
       const session = this.signer.verify('session', cookie)
       // A hub person's session (the app view's sign-in): rights on each document still come from the hub.
-      if (session && session.h && this.hub && typeof session.s === 'string') return { role: 'member', name: session.n, email: session.m, sub: session.s, hub: true, via: 'session' }
+      if (session && session.h && this.hub && typeof session.s === 'string') return { role: 'member', name: session.n, email: session.m, sub: session.s, hub: true, via: 'session', token: typeof session.t === 'string' ? session.t : undefined }
       if (session && !session.h) return { role: session.r, name: session.n, email: session.m, via: 'session' }
     }
     return ANONYMOUS
@@ -170,7 +172,7 @@ export class Authenticator {
 
   sessionCookie(principal) {
     const ttl = this.auth.sessionTtl
-    const token = this.signer.sign('session', { n: principal.name, m: principal.email, r: principal.role, ...(principal.hub ? { h: 1, s: principal.sub } : {}), e: Math.floor(Date.now() / 1000) + ttl, i: randomBytes(6).toString('base64url') })
+    const token = this.signer.sign('session', { n: principal.name, m: principal.email, r: principal.role, ...(principal.hub ? { h: 1, s: principal.sub, ...(principal.token ? { t: principal.token } : {}) } : {}), e: Math.floor(Date.now() / 1000) + ttl, i: randomBytes(6).toString('base64url') })
     return this.cookie(SESSION_COOKIE, token, ttl)
   }
 

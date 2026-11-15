@@ -137,7 +137,7 @@
 
   // ---- The list ----
 
-  var view = { tab: 'all', query: '', rows: null, canCreate: false, next: null }
+  var view = { tab: 'all', query: '', rows: null, canCreate: false, hub: false, next: null }
 
   function home() {
     var state = view
@@ -147,7 +147,14 @@
     var lst = h('div.lst')
     var search = h('input', { type: 'search', placeholder: 'Поиск по документам', 'aria-label': 'Поиск по документам', value: state.query })
     var newBtn = h('button.btn.pri', { type: 'button', onClick: function () { newMenu(newBtn) } }, DX.icon('plus'), h('span', 'Новый документ'))
-    var head = h('div.lhd', h('h1', 'Документы'), h('label.srch', DX.icon('search'), search), newBtn)
+    var moreBtn = DX.ib('ellipsis', 'Ещё', function () { listMenu(moreBtn) }, { tp: 'dl' })
+    moreBtn.hidden = true
+    var head = h('div.lhd', h('h1', 'Документы'), h('label.srch', DX.icon('search'), search), moreBtn, newBtn)
+    function listMenu(anchor) {
+      DX.popover(anchor, function (close) {
+        return h('div', DX.mi('trash-2', 'Корзина', function () { close(); trashMenu(anchor, fetchRows) }))
+      }, { align: 'end' })
+    }
     var seg = h('div.seg.sm', { role: 'tablist' })
     TABS.forEach(function (t) {
       seg.appendChild(h('button', { type: 'button', role: 'tab', 'data-tab': t[0], onClick: function () { state.tab = t[0]; draw() } }, t[1]))
@@ -231,6 +238,8 @@
           if (found.__unauthorized) return needSignIn()
           state.rows = found.items || []
           state.canCreate = !!found.canCreate
+          state.hub = !!found.hub
+          moreBtn.hidden = !state.hub
           state.next = found.nextOffset
           draw()
         },
@@ -251,9 +260,9 @@
     }
 
     var TEMPLATES = [
-      { title: 'Заметки встречи', icon: 'users', body: '# Заметки встречи\n\n**Когда:** \n**Кто:** \n\n## Повестка\n\n- \n\n## Решения\n\n- \n\n## Что делаем дальше\n\n| Что | Кто | Когда |\n| --- | --- | --- |\n|  |  |  |\n' },
-      { title: 'План работ', icon: 'list-ordered', body: '# План работ\n\n> [!NOTE] Цель одним предложением.\n\n## Шаги\n\n1. \n2. \n3. \n\n## Риски\n\n- \n' },
-      { title: 'Разбор', icon: 'file-pen', body: '# Разбор\n\n## Что случилось\n\n## Почему\n\n## Что сделаем\n\n- \n' },
+      { id: 'meeting', title: 'Заметки встречи', icon: 'users', body: '# Заметки встречи\n\n**Когда:** \n**Кто:** \n\n## Повестка\n\n- \n\n## Решения\n\n- \n\n## Что делаем дальше\n\n| Что | Кто | Когда |\n| --- | --- | --- |\n|  |  |  |\n' },
+      { id: 'plan', title: 'План работ', icon: 'list-ordered', body: '# План работ\n\n> [!NOTE] Цель одним предложением.\n\n## Шаги\n\n1. \n2. \n3. \n\n## Риски\n\n- \n' },
+      { id: 'review', title: 'Разбор', icon: 'file-pen', body: '# Разбор\n\n## Что случилось\n\n## Почему\n\n## Что сделаем\n\n- \n' },
     ]
     function templates(anchor) {
       DX.popover(anchor, function (close) {
@@ -265,11 +274,20 @@
       }, { align: 'end' })
     }
 
-    function create(t) {
-      DX.fetchJson('/app/docs', { method: 'POST', body: t ? { title: t.title, markdown: t.body } : { title: 'Новый документ' } }).then(function (res) {
+    function create(t, spaceId) {
+      var body = state.hub
+        ? (t ? { template: t.id } : { title: 'Новый документ' })
+        : (t ? { title: t.title, markdown: t.body } : { title: 'Новый документ' })
+      var chosen = spaceId || DX.pref.get('space', '')
+      if (state.hub && chosen) body.spaceId = chosen
+      DX.fetchJson('/app/docs', { method: 'POST', body: body }).then(function (res) {
         if (res.__unauthorized) return needSignIn()
         go(res.slug)
-      }, function (e) { DX.toast(e.message) })
+      }, function (e) {
+        var spaces = e.code === 'space_required' ? spacesOf(e.message) : []
+        if (spaces.length) return chooseSpace(newBtn, spaces, function (id) { DX.pref.set('space', id); create(t, id) })
+        DX.toast(e.message)
+      })
     }
 
     function askAgentNew() {
@@ -337,16 +355,16 @@
         var url = r.url || location.origin + '/a/' + r.slug
         if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () { DX.toast('Ссылка скопирована') })
       }))
-      if (view.canCreate && r.canWrite !== false) {
+      if (view.canCreate && (view.hub || r.canWrite !== false)) {
         box.appendChild(DX.mi('copy', 'Сделать копию', function () {
           close()
           duplicate(r)
         }))
       }
       box.appendChild(DX.mi('file-down', 'Скачать', function () { close(); download(r) }))
-      if (view.canCreate && r.canWrite !== false) {
+      if (view.hub || (view.canCreate && r.canWrite !== false)) {
         box.appendChild(h('div.msep'))
-        box.appendChild(DX.mi('trash-2', 'Удалить', function () { close(); remove(r, redraw) }, { danger: true }))
+        box.appendChild(DX.mi('trash-2', view.hub ? 'В корзину' : 'Удалить', function () { close(); remove(r, redraw) }, { danger: true }))
       }
       return box
     }, { align: 'end', onClose: function () { delete rowEl.dataset.hv } })
@@ -377,12 +395,37 @@
   }
 
   function duplicate(r) {
-    DX.fetchJson('/app/doc?slug=' + encodeURIComponent(r.slug)).then(function (d) {
-      var body = { title: d.title + ' (копия)' }
-      if (d.kind === 'text') body.markdown = d.markdown
-      else return DX.toast('Копию HTML-документа сделает агент: попросите в чате')
-      return DX.fetchJson('/app/docs', { method: 'POST', body: body }).then(function (res) { go(res.slug) })
-    }).catch(function (e) { DX.toast(e.message) })
+    DX.fetchJson('/app/doc/duplicate', { method: 'POST', body: { slug: r.slug, spaceId: view.hub ? DX.pref.get('space', '') || undefined : undefined } }).then(function (res) {
+      if (res.__unauthorized) return needSignIn()
+      go(res.slug)
+    }, function (e) {
+      var spaces = e.code === 'space_required' ? spacesOf(e.message) : []
+      if (spaces.length) {
+        return chooseSpace({ x: window.innerWidth / 2 - 130, y: window.innerHeight / 3, w: 260, h: 10 }, spaces, function (id) {
+          DX.pref.set('space', id)
+          duplicate(r)
+        })
+      }
+      DX.toast(e.message)
+    })
+  }
+
+  /** «id (Название), id2 (Название 2)» in the hub's words → [{id, name}]. */
+  function spacesOf(text) {
+    var out = []
+    var re = /([\w-]+) \(([^)]*)\)/g
+    var m
+    var tail = String(text).split('—').pop()
+    while ((m = re.exec(tail))) out.push({ id: m[1], name: m[2] })
+    return out
+  }
+
+  function chooseSpace(anchor, spaces, pick) {
+    DX.popover(anchor, function (close) {
+      var box = h('div', h('div.mlab', 'В каком пространстве?'))
+      spaces.forEach(function (sp) { box.appendChild(DX.mi('folder', sp.name, function () { close(); pick(sp.id) })) })
+      return box
+    }, { align: 'end' })
   }
 
   function download(r) {
@@ -399,6 +442,7 @@
   }
 
   function remove(r, redraw) {
+    if (view.hub) return toTrash(r, redraw)
     DX.popover({ x: window.innerWidth / 2 - 130, y: window.innerHeight / 3, w: 260, h: 10 }, function (close) {
       return h('div', { style: 'padding:8px;min-width:260px' }, h('div', { style: 'padding:4px 6px 10px' }, 'Удалить «' + r.title + '»? Это нельзя отменить.'), h('div', { style: 'display:flex;gap:6px;justify-content:flex-end' },
         h('button.btn.sm.ghost', { type: 'button', onClick: close }, 'Отмена'),
@@ -411,6 +455,49 @@
           }, function (e) { DX.toast(e.message) })
         } }, 'Удалить')))
     }, { keep: function () { return false } })
+  }
+
+  /** Into the hub's trash: no question asked, «Отменить» in the toast brings it back. */
+  function toTrash(r, redraw) {
+    DX.fetchJson('/app/doc?slug=' + encodeURIComponent(r.slug), { method: 'DELETE' }).then(function (res) {
+      if (res.__unauthorized) return needSignIn()
+      var at = view.rows.findIndex(function (x) { return x.slug === r.slug })
+      view.rows = view.rows.filter(function (x) { return x.slug !== r.slug })
+      redraw()
+      DX.toast('«' + r.title + '» в корзине', { label: 'Отменить', run: function () { fromTrash(r.slug, at, r, redraw) } })
+    }, function (e) { DX.toast(e.message) })
+  }
+
+  function fromTrash(slug, at, row, redraw) {
+    return DX.fetchJson('/app/trash/restore', { method: 'POST', body: { slug: slug } }).then(function () {
+      if (row && view.rows && !view.rows.some(function (x) { return x.slug === slug })) view.rows.splice(at < 0 ? 0 : at, 0, row)
+      if (redraw) redraw()
+    }, function (e) { DX.toast(e.message) })
+  }
+
+  /** The trash, quietly: what the person may take out again. */
+  function trashMenu(anchor, refetch) {
+    DX.popover(anchor, function () {
+      var box = h('div.trash', h('div.mlab', 'Корзина'))
+      var list = h('div.tl', h('div.hint', 'Загружаю…'))
+      box.appendChild(list)
+      DX.fetchJson('/app/trash').then(function (res) {
+        list.textContent = ''
+        var docs = (res && res.docs) || []
+        if (!docs.length) return list.appendChild(h('div.hint', 'В корзине пусто'))
+        docs.forEach(function (d) {
+          var line = h('div.tr', h('span.tn', d.title || d.slug), h('em', (d.trashedBy ? d.trashedBy + ' · ' : '') + (d.trashedAt ? DX.when(d.trashedAt) : '')))
+          line.appendChild(h('button.btn.sm.ghost', { type: 'button', onClick: function () {
+            fromTrash(d.slug, -1, null, null).then(function () { line.remove(); if (refetch) refetch(); DX.toast('«' + (d.title || d.slug) + '» возвращён') })
+          } }, 'Вернуть'))
+          list.appendChild(line)
+        })
+      }, function (e) {
+        list.textContent = ''
+        list.appendChild(h('div.hint', e.message))
+      })
+      return box
+    }, { align: 'end', cls: 'trashpop' })
   }
 
   // ---- Start ----
