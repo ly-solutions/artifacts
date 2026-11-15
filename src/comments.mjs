@@ -55,8 +55,18 @@ export function cleanAnchor(raw) {
 
 export function cleanAuthor(author) {
   const kind = author?.kind === 'agent' ? 'agent' : 'person'
-  return { name: clip(author?.name || (kind === 'agent' ? 'Агент' : 'Гость'), 120), kind }
+  const entry = { name: clip(author?.name || (kind === 'agent' ? 'Агент' : 'Гость'), 120), kind }
+  // A stable id of the person (never shown): who owns a thread is decided by it, not by a name anyone may carry.
+  if (kind === 'person' && typeof author?.id === 'string' && author.id) entry.id = clip(author.id, 200)
+  return entry
 }
+
+/** The stable id of a signed-in person, or null when the caller has none (a static token). */
+export const personId = (principal) => (typeof principal?.sub === 'string' && principal.sub ? principal.sub : typeof principal?.email === 'string' && principal.email ? principal.email.toLowerCase() : null)
+
+/** Whether the caller may comment: in the hub by the right the hub gave, otherwise by being able to read. */
+export const mayComment = (access, principal) =>
+  principal.hub ? access.right === 'comment' || access.right === 'edit' || access.write === true : access.read === true
 
 /** Whether a text calls the agent: «@агент», «@agent». */
 export const mentionsAgent = (text) => /(^|[\s(,.;:!?])@(агент|agent)(?![\p{L}\p{N}_])/iu.test(String(text ?? ''))
