@@ -405,7 +405,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
     // Fonts are fetched by sandboxed documents, whose origin is "null".
     if (rel.endsWith('.woff2')) headers['access-control-allow-origin'] = '*'
     if (entry.br) headers.vary = 'accept-encoding'
-    if (String(req.headers['if-none-match'] ?? '').split(/\s*,\s*/).includes(etag)) return send(res, 304, '', headers)
+    if (String(req.headers['if-none-match'] ?? '').split(',').some((tag) => tag.trim() === etag)) return send(res, 304, '', headers)
     const encoding = entry.br ? pickEncoding(req.headers['accept-encoding']) : null
     if (encoding) return send(res, 200, entry[encoding], { ...headers, 'content-encoding': encoding })
     send(res, 200, entry.body, headers)

@@ -48,7 +48,8 @@
   var loading = {}
   DX.need = function (group) {
     if (loading[group]) return loading[group]
-    var files = DX.need.files(group)
+    // Only our own versioned script addresses, whatever the page's list says.
+    var files = DX.need.files(group).filter(function (src) { return /^\/static\/[\w/.-]+\.js\?v=[\w-]+$/.test(src) })
     loading[group] = Promise.all(files.map(function (src) {
       return new Promise(function (resolve, reject) {
         var s = document.createElement('script')

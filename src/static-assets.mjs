@@ -75,8 +75,15 @@ export const TYPES = {
 
 /** Which encoding of the ones we have the client takes: 'br', 'gzip' or null. */
 export function pickEncoding(acceptEncoding) {
-  const accept = String(acceptEncoding ?? '').toLowerCase()
-  const takes = (name) => new RegExp(`(^|[\\s,])${name}(?!;q=0(\\.0*)?(\\s|,|$))`).test(accept)
+  const takes = (name) =>
+    String(acceptEncoding ?? '')
+      .toLowerCase()
+      .split(',')
+      .some((part) => {
+        const [coding, ...params] = part.split(';').map((s) => s.trim())
+        const q = params.find((p) => p.startsWith('q='))
+        return coding === name && !(q && Number(q.slice(2)) === 0)
+      })
   if (takes('br')) return 'br'
   if (takes('gzip')) return 'gzip'
   return null
