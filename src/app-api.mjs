@@ -49,6 +49,9 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
     share: access.share === true,
   })
 
+  const hubUrl = config.auth?.mode === 'harnessly' ? String(config.auth.harnessly?.issuer ?? '').replace(/\/+$/, '') : ''
+  const shareUrlOf = (slug, principal) => (hubUrl && principal.hub ? `${hubUrl}/docs/${encodeURIComponent(slug)}?share=1` : null)
+
   const canCreate = (principal) => (principal.hub ? Boolean(hubDocs && principal.token) : canWrite(principal))
 
   /** A refusal of the hub, told to the page in the hub's words; a token that no longer works asks the page to sign in again. */
@@ -100,7 +103,7 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
     const limit = Math.min(Math.max(Math.floor(Number(url.searchParams.get('limit') ?? MAX_LIST)) || MAX_LIST, 1), MAX_LIST)
     const offset = Math.max(Math.floor(Number(url.searchParams.get('offset') ?? 0)) || 0, 0)
     const result = await searchFor(principal, { q: url.searchParams.get('q') ?? '', tags: [], limit, offset })
-    return json(res, 200, { total: result.total, nextOffset: result.nextOffset ?? null, canCreate: canCreate(principal), hub: Boolean(principal.hub), items: result.items.map((item) => listItem(item, principal)) })
+    return json(res, 200, { total: result.total, nextOffset: result.nextOffset ?? null, canCreate: canCreate(principal), hub: Boolean(principal.hub), shareBase: hubUrl && principal.hub ? `${hubUrl}/docs/` : null, items: result.items.map((item) => listItem(item, principal)) })
   }
 
   async function doc(res, url, principal) {
@@ -130,6 +133,9 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
       version: { n, of: meta.versions.length, id: version.id, current },
       versions: artifact.versions.map((v) => ({ n: v.n, id: v.id, createdAt: v.createdAt, author: v.author ?? null, note: v.note ?? null })),
       hub: Boolean(principal.hub),
+      // «Поделиться» is the hub's dialog of the document (people, roles, links without sign-in, HRN-1519): in harnessly
+      // the app asks the page to open it, on this site it opens the hub's page of the document with the dialog open.
+      shareUrl: shareUrlOf(slug, principal),
       rights: { ...rights, write: rights.write && current, restore: rights.write && !current, create: canCreate(principal) },
       me: { name: personName(principal) },
       contentUrl: `/a/${slug}/raw?t=${encodeURIComponent(issueViewTicket(slug))}&v=${n}${theme}`,
