@@ -437,7 +437,7 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
     },
 
     async quick_read(principal, args) {
-      const { slug, content, kind } = await quickDoc(principal, args)
+      const { content, kind } = await quickDoc(principal, args)
       const artifact = service.present(content.meta)
       return { kind: 'document', title: artifact.title, text: quickSource(content, kind), version: String(content.n) }
     },
