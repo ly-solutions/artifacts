@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   undo. See docs/mcp.md.
 - The app package is 0.5.0.
 
+### Fixed
+
+- The app view follows a document harnessly asks for later in the same window (`context` event): harnessly keeps the
+  window alive between boards, documents and their lists (HRN-1469). Only a new ask moves the view.
+
 ### Changed
 
 - The harnessly app view (`/app`) is a site of its own: it reads the catalog (`GET /app/docs`) and a document
