@@ -142,6 +142,7 @@
     var filter = 'open'
     var ctrl = {}
     var composers = {}
+    var cards = {}
 
     function peopleNames() {
       var seen = {}
@@ -168,7 +169,7 @@
       if (el && !el.dataset.ph) return ctrl.render()
       el = h('aside.rp', { 'aria-label': 'Комментарии и чат' })
       host.appendChild(el)
-      host.dataset.panel = '1'
+      DX.slide(host.querySelector('.dscroll > .page'), function () { host.dataset.panel = '1' })
       ctrl.render()
       ctx.layout()
     }
@@ -179,7 +180,7 @@
       el = null
       gone.dataset.ph = 'closing'
       setTimeout(function () { gone.remove() }, 200)
-      delete host.dataset.panel
+      DX.slide(host.querySelector('.dscroll > .page'), function () { delete host.dataset.panel })
       ctx.layout()
     }
 
@@ -198,8 +199,9 @@
       el.appendChild(h('div.rp-h', seg, DX.ib('x', 'Закрыть', ctrl.close, { tp: 'dl' })))
       if (tab === 'comments') commentsTab()
       else chatTab()
+      // Writing scrollTop lays the page out at once: only when there is a place to come back to.
       var body = el.querySelector('.rp-b')
-      if (body) body.scrollTop = keepScroll
+      if (body && keepScroll) body.scrollTop = keepScroll
     }
 
     // ---- Comments ----
@@ -216,7 +218,13 @@
     function commentsTab() {
       var filters = h('div.seg.sm.pfil', { role: 'tablist' })
       ;[['open', 'Открытые'], ['resolved', 'Решённые'], ['mine', 'Мне']].forEach(function (f) {
-        filters.appendChild(h('button', { type: 'button', role: 'tab', 'data-on': String(filter === f[0]), onClick: function () { filter = f[0]; ctrl.render() } }, f[1]))
+        filters.appendChild(h('button', { type: 'button', role: 'tab', 'data-on': String(filter === f[0]), onClick: function () {
+          if (filter === f[0]) return
+          filter = f[0]
+          var b = el && el.querySelector('.rp-b')
+          if (b) b.scrollTop = 0
+          ctrl.render()
+        } }, f[1]))
       })
       el.appendChild(h('div.pfil-w', filters))
       var body = h('div.rp-b')
@@ -225,9 +233,17 @@
         var empty = { open: ['Пока ни одного комментария', ctx.canComment() ? 'Выделите слова в тексте и нажмите «Комментарий». Чтобы позвать агента, напишите @агент.' : ''], resolved: ['Решённых нет', 'Здесь будут обсуждения, которые вы закрыли.'], mine: ['Для вас ничего нет', 'Сюда попадают треды, где вы писали или где вас упомянули.'] }[filter]
         body.appendChild(h('div.hint', h('b', empty[0]), empty[1]))
       }
+      var minute = Math.floor(Date.now() / 60000)
+      var seen = {}
       list.forEach(function (t) {
-        body.appendChild(threadCard(t))
+        // A card is drawn again only when its thread (or what the card shows of the page around it) changed (HRN-1516).
+        var sig = [minute, t.status, ctx.activeThread() === t.id, ctx.pendingAgent(t.id), ctx.canComment(), ctx.canWrite(), JSON.stringify(t.anchor), JSON.stringify(t.messages), JSON.stringify(t.edits || [])].join('|')
+        var kept = cards[t.id]
+        if (!kept || kept.sig !== sig) kept = cards[t.id] = { sig: sig, el: threadCard(t) }
+        seen[t.id] = 1
+        body.appendChild(kept.el)
       })
+      Object.keys(cards).forEach(function (id) { if (!seen[id] && !ctx.threads().some(function (t) { return t.id === id })) delete cards[id] })
       el.appendChild(body)
     }
 

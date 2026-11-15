@@ -625,6 +625,7 @@ a {
 .lscroll {
   flex: 1;
   overflow-y: auto;
+  background: var(--dx-bg); /* opaque: scrolled on the compositor */
   padding-bottom: 40px;
 }
 .lbl {
@@ -780,9 +781,12 @@ a {
   position: absolute;
   inset: 0;
   overflow-y: auto;
+  /* Opaque, so the browser scrolls it on the compositor instead of repainting the page every frame (HRN-1516). */
+  background: var(--dx-bg);
   overflow-x: hidden;
   scroll-behavior: smooth;
-  transition: padding-right 0.28s var(--dx-ease);
+  /* No transition on the padding: that lays the whole text out every frame. The page slides with a transform
+     instead (DX.slide, HRN-1516). */
 }
 .doc[data-panel='1'] .dscroll {
   padding-right: 360px;
@@ -1117,6 +1121,9 @@ a {
   transition: opacity 0.12s;
   user-select: none;
 }
+.gr[hidden] {
+  display: none;
+}
 .blk[data-t='heading'] .gr {
   top: 6px;
 }
@@ -1301,6 +1308,7 @@ a {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  background: var(--dx-raised); /* opaque: scrolled on the compositor */
   padding: 4px 10px 12px;
   display: flex;
   flex-direction: column;
@@ -1774,6 +1782,7 @@ button.chipl:hover {
   position: absolute;
   inset: 0;
   overflow: auto;
+  background: var(--dx-stage); /* opaque: scrolled on the compositor */
   padding: 64px 12px 24px;
   display: flex;
   justify-content: center;

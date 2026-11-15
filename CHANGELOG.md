@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance
+
+- Long documents stay smooth (HRN-1516). One block handle for the page instead of one per block (the hidden handles
+  were repainted and hit-tested on every scroll frame, and showed up on hover in «Просмотр»); the text scrolls on the
+  compositor; a long text opens by parts, the first screens at once; the comments panel slides the text with a transform
+  instead of laying it out every frame and keeps its thread cards between filters; comment places, icons and the
+  contents are looked up once instead of per thread, per icon and per scroll.
+- The app's list does not load the editor: the text editor, the comments and chat and the HTML editor are fetched with
+  the first document (and prefetched while the list is on screen).
+- Static files are sent with a content version in their address (cached for a year), an ETag, and brotli or gzip;
+  large JSON answers and pages are compressed too (a long document's JSON is ~8× smaller).
+
 ### Added
 
 - The agent's edits are shown as one turn: the changed places stay lit, a bar says «Агент изменил N раздела · Показать ·

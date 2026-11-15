@@ -3,10 +3,9 @@
  * endpoint, and the routes of the previous contract (`POST /a`, `PATCH /a/{slug}`).
  */
 import { readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { extname, join, normalize } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { extname } from 'node:path'
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib'
 
 import { ANONYMOUS, Authenticator, OIDC_COOKIE, SESSION_COOKIE, canRead, canShare, canWrite, parseCookies } from './auth/index.mjs'
 import { HubRightsError, HubUnavailableError } from './auth/harnessly.mjs'
@@ -21,14 +20,12 @@ import { enterPassPerson, issueEnterPass, issueViewTicket, viewTicketValid } fro
 import { appViewPage, catalogPage, embedSignInPage, errorPage, loginPage, readerPage, resultsList } from './render/ui.mjs'
 import { ApiError, ArtifactService } from './service.mjs'
 import { TrashStore } from './trash.mjs'
+import { TYPES, compressible, pickEncoding, staticEntry } from './static-assets.mjs'
 import { isValidSlug, normalizeTags } from './text.mjs'
 
-const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url))
 const FRAME_EDITOR = readFileSync(new URL('../web/docs/frame-editor.js', import.meta.url), 'utf8')
 const MAX_PAGE = 500
 const CATALOG_PAGE = 200
-const TYPES = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.txt': 'text/plain; charset=utf-8' }
-
 export function createLogger({ level = 'info', format = 'json' } = {}, stream = process.stdout) {
   const order = { debug: 10, info: 20, warn: 30, error: 40 }
   const min = order[level] ?? 20
@@ -128,6 +125,15 @@ export async function createApp(config, { storage, log = createLogger(config.log
 
   function send(res, status, body, headers = {}) {
     if (res.headersSent) return
+    // Text answers (pages, JSON, Markdown) go compressed to the clients that take it (HRN-1516): a long document is
+    // ~100 KB of JSON and ~25 KB in brotli.
+    const length = typeof body === 'string' ? Buffer.byteLength(body) : body?.length ?? 0
+    const encoding = status !== 204 && status !== 304 && !headers['content-encoding'] && compressible(headers['content-type'], length) ? pickEncoding(res.req?.headers['accept-encoding']) : null
+    if (encoding) {
+      const raw = typeof body === 'string' ? Buffer.from(body) : body
+      body = encoding === 'br' ? brotliCompressSync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: raw.length } }) : gzipSync(raw, { level: 6 })
+      headers = { ...headers, 'content-encoding': encoding, vary: 'accept-encoding' }
+    }
     res.writeHead(status, { ...baseHeaders, ...headers })
     res.end(body)
   }
@@ -387,18 +393,22 @@ export async function createApp(config, { storage, log = createLogger(config.log
     send(res, 200, page.html, headers)
   }
 
-  async function serveStatic(res, rel) {
-    const path = normalize(join(WEB_DIR, rel))
-    if (!path.startsWith(WEB_DIR) || rel.includes('\0')) return send(res, 404, 'not found')
-    try {
-      const body = await readFile(path)
-      const headers = { 'content-type': TYPES[extname(path)] ?? 'application/octet-stream', 'cache-control': 'public, max-age=3600' }
-      // Fonts are fetched by sandboxed documents, whose origin is "null".
-      if (path.endsWith('.woff2')) headers['access-control-allow-origin'] = '*'
-      send(res, 200, body, headers)
-    } catch {
-      send(res, 404, 'not found', { 'content-type': 'text/plain' })
-    }
+  /**
+   * A file of web/: from memory, precompressed, with an ETag (HRN-1516). An address with the file's own `?v=` is the
+   * same bytes forever and is cached for a year; any other is cached for an hour and then asked again with the ETag.
+   */
+  async function serveStatic(req, res, rel, v) {
+    const entry = await staticEntry(rel, TYPES[extname(rel)] ?? 'application/octet-stream')
+    if (!entry) return send(res, 404, 'not found', { 'content-type': 'text/plain' })
+    const etag = `"${entry.hash}"`
+    const headers = { 'content-type': entry.type, etag, 'cache-control': v === entry.hash ? 'public, max-age=31536000, immutable' : 'public, max-age=3600' }
+    // Fonts are fetched by sandboxed documents, whose origin is "null".
+    if (rel.endsWith('.woff2')) headers['access-control-allow-origin'] = '*'
+    if (entry.br) headers.vary = 'accept-encoding'
+    if (String(req.headers['if-none-match'] ?? '').split(/\s*,\s*/).includes(etag)) return send(res, 304, '', headers)
+    const encoding = entry.br ? pickEncoding(req.headers['accept-encoding']) : null
+    if (encoding) return send(res, 200, entry[encoding], { ...headers, 'content-encoding': encoding })
+    send(res, 200, entry.body, headers)
   }
 
   /** A plugin route: auth as declared, then the handler with a small toolkit. */
@@ -471,8 +481,8 @@ export async function createApp(config, { storage, log = createLogger(config.log
         return send(res, 503, 'storage unavailable\n', { 'content-type': 'text/plain' })
       }
     }
-    if (path.startsWith('/static/')) return serveStatic(res, path.slice('/static/'.length))
-    if (path === '/favicon.svg' || path === '/favicon.ico') return serveStatic(res, 'favicon.svg')
+    if (path.startsWith('/static/')) return serveStatic(req, res, path.slice('/static/'.length), url.searchParams.get('v'))
+    if (path === '/favicon.svg' || path === '/favicon.ico') return serveStatic(req, res, 'favicon.svg', null)
     if (path === '/robots.txt') return send(res, 200, 'User-agent: *\nDisallow: /\n', { 'content-type': 'text/plain' })
     // The app view for harnessly: the page; its data is /app/docs below, by the session cookie.
     if (path === '/app' && method === 'GET') {
