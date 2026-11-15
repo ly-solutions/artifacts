@@ -209,7 +209,7 @@ describe('harnessly mode', () => {
       assert.equal(init.data.result.protocolVersion, '2025-06-18')
       assert.match(init.data.result.instructions, /through the harnessly hub/)
       const list = await mcp(hub.token(), 'tools/list', {})
-      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_signin', 'doc_open', 'doc_comments', 'doc_reply', 'doc_comment', 'doc_edit', 'doc_share'])
+      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_signin', 'doc_open', 'doc_comments', 'doc_reply', 'doc_comment', 'doc_edit', 'quick_read', 'quick_apply', 'quick_undo', 'doc_share'])
     })
 
     it('acknowledges notifications with 202', async () => {
@@ -241,6 +241,97 @@ describe('harnessly mode', () => {
     it('doc_versions lists versions of an allowed document', async () => {
       const result = await call(hub.token(), 'doc_versions', { slug: 'roadmap-comment' })
       assert.equal(result.structuredContent.versions.length, 1)
+    })
+
+    describe('quick edit', () => {
+      const slug = 'quick-edit-doc'
+      const TEXT = '# План\n\nПервая строка.\nВторая строка.\nТретья строка.\n'
+      let token
+      const quick = async (name, args) => {
+        const result = await call(token, name, args)
+        return { result, data: result.isError ? JSON.parse(result.content[0].text) : result.structuredContent }
+      }
+      const current = async () => (await app.service.readContent(slug, null))
+      beforeEach(async () => {
+        token = hub.token()
+        hub.rights['u-ada'][slug] = 'edit'
+        await app.service.publish({ slug, title: 'План', markdown: TEXT })
+      })
+
+      it('reads the source and the version', async () => {
+        const { result, data } = await quick('quick_read', { object: slug })
+        assert.deepEqual(data, { kind: 'document', title: 'План', text: TEXT, version: String((await current()).n) })
+        assert.deepEqual(JSON.parse(result.content[0].text), data)
+      })
+
+      it('applies replacements as a new version made by the person', async () => {
+        const { data: read } = await quick('quick_read', { object: slug })
+        const { data } = await quick('quick_apply', { object: slug, version: read.version, edits: [{ old: 'Вторая строка.', new: 'Вторая, короче.' }] })
+        assert.equal(data.changed, true)
+        assert.equal(data.version, String(Number(read.version) + 1))
+        assert.match(data.hint, /Вторая, короче\./)
+        const now = await current()
+        assert.match(now.markdown, /Вторая, короче\./)
+        assert.equal(now.version.author, 'Ada')
+        assert.equal(now.version.note, 'Голосовая правка')
+      })
+
+      it('refuses a fragment that is not unique or missing', async () => {
+        const { data: read } = await quick('quick_read', { object: slug })
+        for (const old of ['строка.', 'нет такого']) {
+          const { result, data } = await quick('quick_apply', { object: slug, version: read.version, edits: [{ old, new: 'x' }] })
+          assert.equal(result.isError, true)
+          assert.equal(data.code, 'not_unique')
+        }
+        assert.equal((await current()).markdown, TEXT)
+      })
+
+      it('answers conflict when the document moved on', async () => {
+        const { data: read } = await quick('quick_read', { object: slug })
+        await app.service.publish({ slug, markdown: `${TEXT}Ещё.\n` })
+        const { result, data } = await quick('quick_apply', { object: slug, version: read.version, edits: [{ old: 'Первая', new: 'Главная' }] })
+        assert.equal(result.isError, true)
+        assert.equal(data.code, 'conflict')
+      })
+
+      it('asks for a yes before removing a line, and saves nothing', async () => {
+        const { data: read } = await quick('quick_read', { object: slug })
+        const edits = [{ old: 'Вторая строка.\n', new: '' }]
+        const { result, data } = await quick('quick_apply', { object: slug, version: read.version, edits })
+        assert.equal(result.isError, true)
+        assert.equal(data.code, 'needs_yes')
+        assert.equal((await current()).markdown, TEXT)
+        const yes = await quick('quick_apply', { object: slug, version: read.version, edits, confirmed: true })
+        assert.equal(yes.data.changed, true)
+        assert.ok(!(await current()).markdown.includes('Вторая'))
+      })
+
+      it('undoes the edit, and refuses once something else changed', async () => {
+        const { data: read } = await quick('quick_read', { object: slug })
+        const { data: applied } = await quick('quick_apply', { object: slug, version: read.version, edits: [{ old: 'Третья', new: 'Последняя' }] })
+        const undone = await quick('quick_undo', { object: slug, version: applied.version })
+        assert.equal(undone.data.changed, true)
+        assert.equal((await current()).markdown, TEXT)
+        const stale = await quick('quick_undo', { object: slug, version: applied.version })
+        assert.equal(stale.result.isError, true)
+        assert.equal(stale.data.code, 'conflict')
+      })
+
+      it('has nothing to undo in the first version', async () => {
+        await app.service.publish({ slug: 'quick-edit-one', title: 'Один', markdown: 'один' })
+        hub.rights['u-ada']['quick-edit-one'] = 'edit'
+        const { data } = await quick('quick_undo', { object: 'quick-edit-one', version: '1' })
+        assert.equal(data.code, 'nothing_to_undo')
+      })
+
+      it('refuses a reader without the edit right', async () => {
+        hub.rights['u-ada'][slug] = 'view'
+        for (const [name, args] of [['quick_read', { object: slug }], ['quick_apply', { object: slug, version: '1', edits: [{ old: 'Первая', new: 'x' }] }], ['quick_undo', { object: slug, version: '1' }]]) {
+          const { result, data } = await quick(name, args)
+          assert.equal(result.isError, true, name)
+          assert.equal(data.code, 'forbidden')
+        }
+      })
     })
 
     it('doc_share needs the edit right', async () => {

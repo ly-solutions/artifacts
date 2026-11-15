@@ -542,6 +542,11 @@
         if (object && !(first && params().slug)) go(object)
         else if (!object && !first && params().slug) go(null)
       }
+      // A fast voice edit saved by harnessly (HRN-1466): the open document takes the new version and lights the place.
+      hl.on('event', function (e) {
+        if (!e || e.kind !== 'quick-edit' || e.object !== params().slug || !current || !current.quickEdit) return
+        current.quickEdit(e.hint)
+      })
       ask(hl.context.data)
       hl.on('context', function (ctx) { ask(ctx && ctx.data) })
     },

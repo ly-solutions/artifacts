@@ -32,6 +32,9 @@ All notable changes to this project are documented here. The format follows
   the app and from the agent through MCP) is sent there as `{kind: "doc", event: "thread.created" | "thread.replied", …}`
   with the `X-Boards-Webhook-Secret` header (`ARTIFACTS_HUB_EVENTS_SECRET`), so `@harnessly` reaches the agent while the
   document is closed. `@harnessly` now also counts as a call to the agent. Nothing is sent when the URL is empty.
+- A fast voice edit (HRN-1466): the MCP tools `quick_read`, `quick_apply` and `quick_undo` give the host the document as
+  text, apply exact replacements as the person (a new version, noted «Голосовая правка») and undo the last one; the app
+  declares them in `quickEdit` of `app.json`, and the app view lights the changed place on a `quick-edit` event.
 - In a harnessly installation a person makes, copies, renames and trashes documents from the list and from the open
   document: the requests go to the hub (`/api/platform/docs`) as that person, with the documents' access token and the
   person's own app token (`X-Harnessly-Token`, kept in the session at sign-in, never given to the page). A trash is
