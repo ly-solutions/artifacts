@@ -66,6 +66,8 @@
       document.addEventListener('selectionchange', onSelectionChange)
       scroller.addEventListener('scroll', DX.debounce(updateToc, 60))
       page.addEventListener('input', onInput)
+      page.addEventListener('mouseover', function (e) { placeGutter(e.target) })
+      page.addEventListener('focusin', function (e) { placeGutter(e.target) })
       page.addEventListener('keydown', onKeyDown)
       page.addEventListener('click', onClick)
       page.addEventListener('paste', onPaste)
@@ -78,18 +80,71 @@
       return !(blocks[0] && blocks[0].type === 'heading' && blocks[0].level === 1)
     }
 
-    function render() {
+    // A long text opens by parts (HRN-1516): the first screens at once, the rest a part per frame, so the page is
+    // on screen and answers while the rest is laid out. Anything that needs the whole text calls finish() first.
+    var FIRST_BLOCKS = 40
+    var PART_BLOCKS = 50
+    var pending = null
+
+    function render(byParts) {
+      stopParts()
       page.textContent = ''
       // A text that starts with its own title carries the byline right under it.
       var headAfter = !showsTitle() && blocks.length && blocks[0].type === 'heading' ? 0 : -1
       if (headAfter < 0) page.appendChild(headerEl())
-      blocks.forEach(function (b, i) {
-        page.appendChild(blockEl(b, i))
-        if (i === headAfter) page.appendChild(headerEl())
-      })
       var tail = h('div.tail', { onClick: addAtEnd })
       page.appendChild(tail)
+      var first = byParts ? Math.min(blocks.length, FIRST_BLOCKS) : blocks.length
+      editing = mode === 'edit' && ctx.canWrite()
+      appendBlocks(0, first, headAfter)
+      if (first < blocks.length) {
+        pending = { from: first, headAfter: headAfter, frame: 0, timer: 0 }
+        nextPart()
+      }
       applyMode()
+      renderThreads()
+      renderToc()
+    }
+    function appendBlocks(from, to, headAfter) {
+      var part = document.createDocumentFragment()
+      for (var i = from; i < to; i += 1) {
+        part.appendChild(blockEl(blocks[i]))
+        if (i === headAfter) part.appendChild(headerEl())
+      }
+      applyModeTo(part)
+      page.insertBefore(part, page.lastChild)
+    }
+    function nextPart() {
+      // After the frame that shows the part before, so each part is laid out on its own.
+      var go = function () { pending.timer = setTimeout(part, 0) }
+      if (document.hidden) pending.timer = setTimeout(part, 0)
+      else pending.frame = requestAnimationFrame(go)
+    }
+    function part() {
+      if (!pending) return
+      var to = Math.min(blocks.length, pending.from + PART_BLOCKS)
+      appendBlocks(pending.from, to, pending.headAfter)
+      pending.from = to
+      if (to < blocks.length) return nextPart()
+      pending = null
+      renderThreads()
+      renderToc()
+    }
+    function stopParts() {
+      if (pending) {
+        cancelAnimationFrame(pending.frame)
+        clearTimeout(pending.timer)
+      }
+      pending = null
+    }
+    /** The whole text is in the page (now, if parts were still coming). */
+    function finish() {
+      if (!pending) return
+      var p = pending
+      pending = null
+      cancelAnimationFrame(p.frame)
+      clearTimeout(p.timer)
+      appendBlocks(p.from, blocks.length, p.headAfter)
       renderThreads()
       renderToc()
     }
@@ -125,7 +180,7 @@
       return el
     }
 
-    function blockEl(b, index) {
+    function blockEl(b) {
       var el = h('div.blk', { 'data-id': b.id, 'data-t': b.type })
       var body
       switch (b.type) {
@@ -175,7 +230,6 @@
           body = h('div.rawblk', h('div.rb-bar', DX.icon('code-xml'), h('span', 'HTML или особая разметка · как написано')), h('div.bc', { 'data-ph': 'HTML' }, b.text))
       }
       el.appendChild(body)
-      if (index !== undefined) el.appendChild(gutter())
       return el
     }
 
@@ -193,8 +247,18 @@
       return el
     }
 
+    // One block handle for the whole page (HRN-1516): it moves into the block under the pointer or the caret. A handle
+    // in every block made each scroll frame repaint and hit-test hundreds of hidden buttons.
+    var grEl = null
     function gutter() {
-      return h('div.gr', { contenteditable: 'false' }, h('button', { type: 'button', 'data-act': 'add', 'data-tip': 'Добавить блок ниже' }, DX.icon('plus')), h('button', { type: 'button', 'data-act': 'grip', 'data-tip': 'Перетащить · меню блока' }, DX.icon('grip-vertical')))
+      if (!grEl) grEl = h('div.gr', { contenteditable: 'false' }, h('button', { type: 'button', 'data-act': 'add', 'data-tip': 'Добавить блок ниже' }, DX.icon('plus')), h('button', { type: 'button', 'data-act': 'grip', 'data-tip': 'Перетащить · меню блока' }, DX.icon('grip-vertical')))
+      return grEl
+    }
+    function placeGutter(node) {
+      if (!editing) return
+      var blk = blkOf(node)
+      if (!blk || blk.parentNode !== page || (grEl && grEl.parentNode === blk) || page.querySelector('.blk.dragging')) return
+      blk.appendChild(gutter())
     }
 
     function bcOf(blk) {
@@ -212,15 +276,17 @@
     function applyMode() {
       editing = mode === 'edit' && ctx.canWrite()
       page.classList.toggle('editing', editing)
-      page.querySelectorAll('.gr').forEach(function (g) {
-        g.hidden = !editing
-      })
-      page.querySelectorAll('.bc').forEach(function (el) {
+      if (!editing && grEl) grEl.remove()
+      applyModeTo(page)
+    }
+    /** Editable or not, for the blocks under `root` (the page, a new block, a part being added). */
+    function applyModeTo(root) {
+      root.querySelectorAll('.bc').forEach(function (el) {
         if (editing && el.closest('.blk').dataset.t !== 'rule') el.setAttribute('contenteditable', el.tagName === 'PRE' ? 'plaintext-only' : 'true')
         else el.removeAttribute('contenteditable')
         el.spellcheck = editing
       })
-      page.querySelectorAll('.bct th, .bct td').forEach(function (c) {
+      root.querySelectorAll('.bct th, .bct td').forEach(function (c) {
         if (editing) c.setAttribute('contenteditable', 'true')
         else c.removeAttribute('contenteditable')
       })
@@ -284,6 +350,7 @@
     }
 
     function onKeyDown(e) {
+      finish()
       if (!editing) return
       var blk = blkOf(e.target)
       if (slash && slashKey(e)) return
@@ -386,32 +453,36 @@
     }
 
     function insertBlockAfter(blk, nb, focus, index) {
+      finish()
       var i = index !== undefined ? index : blockById(blk.dataset.id)
       blocks.splice(i + 1, 0, nb)
-      var el = blockEl(nb, i + 1)
+      var el = blockEl(nb)
       blk.after(el)
-      applyMode()
-      renderToc()
+      // Only the new block is made editable, and the contents change only when a heading came or was split (HRN-1516).
+      applyModeTo(el)
+      if (nb.type === 'heading' || (blocks[i] && blocks[i].type === 'heading')) renderToc()
       if (focus && bcOf(el)) focusEnd(bcOf(el), true)
       changed()
       return el
     }
 
     function addAtEnd() {
+      finish()
       if (!editing) return
       var last = page.querySelector('.blk:last-of-type')
       var lb = blocks[blocks.length - 1]
       if (lb && lb.type === 'para' && !lb.text.trim()) return focusEnd(bcOf(last))
       var nb = DX.newBlock('para', { text: '' })
       blocks.push(nb)
-      var el = blockEl(nb, blocks.length - 1)
+      var el = blockEl(nb)
       page.insertBefore(el, page.querySelector('.tail'))
-      applyMode()
+      applyModeTo(el)
       focusEnd(bcOf(el))
       changed()
     }
 
     function removeBlock(blk) {
+      finish()
       var i = blockById(blk.dataset.id)
       if (i < 0) return
       blocks.splice(i, 1)
@@ -428,6 +499,7 @@
     }
 
     function onPaste(e) {
+      finish()
       if (!editing) return
       var text = (e.clipboardData || window.clipboardData).getData('text/plain')
       if (!text) return
@@ -559,6 +631,7 @@
     }
 
     function transform(blk, kind, fromSlash) {
+      finish()
       var i = blockById(blk.dataset.id)
       if (i < 0) return
       var old = blocks[i]
@@ -579,9 +652,9 @@
       }
       if (!nb) return
       blocks[i] = nb
-      var el = blockEl(nb, i)
+      var el = blockEl(nb)
       blk.replaceWith(el)
-      applyMode()
+      applyModeTo(el)
       renderThreads()
       renderToc()
       var target = bcOf(el)
@@ -604,9 +677,9 @@
           close()
           var nb = DX.newBlock('image', { alt: '', url: url })
           blocks[i] = nb
-          var el = blockEl(nb, i)
+          var el = blockEl(nb)
           blk.replaceWith(el)
-          applyMode()
+          applyModeTo(el)
           changed()
         })
         setTimeout(function () { input.focus() }, 30)
@@ -617,6 +690,7 @@
     // ---- The block's menu, and moving blocks ----
 
     function blockMenu(blk, anchor) {
+      finish()
       var i = blockById(blk.dataset.id)
       var b = blocks[i]
       if (!b) return
@@ -677,6 +751,7 @@
     function startDrag(e) {
       var grip = e.target.closest && e.target.closest('.gr button[data-act="grip"]')
       if (!grip || !editing || e.button !== 0) return
+      finish()
       var blk = blkOf(grip)
       var startY = e.clientY
       var moved = false
@@ -1022,18 +1097,26 @@
       unmark()
       var perBlock = {}
       var open = 0
+      // The text of each block is read once per pass, not once per thread (HRN-1516).
+      var all = null
+      var texts = []
+      var textAt = function (k) {
+        if (texts[k] === undefined) texts[k] = textOf(all[k])
+        return texts[k]
+      }
       ctx.threads().forEach(function (t) {
         if (t.anchor.kind !== 'text') return
+        if (!all) all = page.querySelectorAll('.blk')
         var blk = null
         var hint = t.anchor.block
+        var needle = t.anchor.quote.replace(/\s+/g, ' ').slice(0, 40)
         if (hint !== null && hint !== undefined && blocks[hint]) {
           var cand = page.querySelector('.blk[data-id="' + blocks[hint].id + '"]')
-          if (cand && textOf(cand).indexOf(t.anchor.quote.replace(/\s+/g, ' ').slice(0, 40)) !== -1) blk = cand
+          if (cand && textOf(cand).indexOf(needle) !== -1) blk = cand
         }
         if (!blk) {
-          var all = page.querySelectorAll('.blk')
           for (var k = 0; k < all.length; k += 1) {
-            if (textOf(all[k]).indexOf(t.anchor.quote.replace(/\s+/g, ' ').slice(0, 40)) !== -1) {
+            if (textAt(k).indexOf(needle) !== -1) {
               blk = all[k]
               break
             }
@@ -1054,9 +1137,11 @@
       })
     }
 
+    var tocHeads = []
     function renderToc() {
       if (!tocEl) return
       tocEl.textContent = ''
+      tocHeads = []
       var items = []
       blocks.forEach(function (b, i) {
         if (b.type === 'heading' && b.level <= 3 && !(i === 0 && b.level === 1)) items.push(b)
@@ -1073,14 +1158,25 @@
     }
 
     function updateToc() {
-      if (!tocEl) return
+      if (!tocEl || tocEl.hidden) return
       var top = scroller.scrollTop + 120
       var cur = null
-      blocks.forEach(function (b) {
-        if (b.type !== 'heading') return
-        var el = page.querySelector('.blk[data-id="' + b.id + '"]')
-        if (el && el.offsetTop <= top) cur = b.id
-      })
+      if (!tocHeads.length) {
+        blocks.forEach(function (b) {
+          if (b.type !== 'heading') return
+          var el = page.querySelector('.blk[data-id="' + b.id + '"]')
+          if (el) tocHeads.push(el)
+        })
+      }
+      for (var i = 0; i < tocHeads.length; i += 1) {
+        var el = tocHeads[i]
+        if (!el.isConnected) {
+          tocHeads = []
+          return updateToc()
+        }
+        if (el.offsetTop > top) break
+        cur = el.dataset.id
+      }
       tocEl.querySelectorAll('.ti').forEach(function (t) {
         t.dataset.on = String(t.dataset.id === cur)
       })
@@ -1099,9 +1195,10 @@
           if (!page.contains(document.activeElement)) renderThreads()
         }, 0)
       })
-      render()
+      render(true)
     }
     ctrl.setMode = function (m) {
+      finish()
       mode = m
       closeSlash()
       if (selPop) selPop.close()
@@ -1182,6 +1279,7 @@
     }
     /** The places an agent changed stay lit until the person is done with them (null clears). */
     ctrl.setMarks = function (targets) {
+      finish()
       page.querySelectorAll('.blk.agent-mark').forEach(function (el) { el.classList.remove('agent-mark') })
       ;(targets || []).forEach(function (id) {
         var el = page.querySelector('.blk[data-id="' + id + '"]')
@@ -1189,6 +1287,7 @@
       })
     }
     ctrl.flashTarget = function (id) {
+      finish()
       var el = page.querySelector('.blk[data-id="' + id + '"]')
       if (!el) return false
       scroller.scrollTo({ top: Math.max(0, el.offsetTop - 140), behavior: 'smooth' })
@@ -1197,13 +1296,18 @@
       el.classList.add('flash')
       return true
     }
-    ctrl.renderThreads = renderThreads
+    ctrl.renderThreads = function () {
+      finish()
+      renderThreads()
+    }
     ctrl.refreshHeader = function () {
+      finish()
       var head = page.querySelector('.doc-head')
       if (head) head.replaceWith(headerEl())
     }
     /** Where a thread's words are: scrolls there and lights them. */
     ctrl.reveal = function (thread) {
+      finish()
       var el = page.querySelector('.cm[data-thread="' + thread.id + '"]') || page.querySelector('.cpin[data-thread="' + thread.id + '"]')
       if (!el) return false
       scroller.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + scroller.scrollTop - 160), behavior: 'smooth' })
@@ -1212,6 +1316,7 @@
     }
     /** The place an agent's edit was made (its new words), lit. */
     ctrl.revealText = function (text) {
+      finish()
       var needle = String(text).replace(/\s+/g, ' ').trim().slice(0, 50)
       var all = page.querySelectorAll('.blk')
       for (var i = 0; i < all.length; i += 1) {
@@ -1232,11 +1337,13 @@
       lastSel = null
     }
     ctrl.activeBlockText = function () {
+      finish()
       var sel = getSelection()
       var blk = sel && sel.anchorNode && blkOf(sel.anchorNode)
       return blk ? textOf(blk) : ''
     }
     ctrl.destroy = function () {
+      stopParts()
       document.removeEventListener('selectionchange', onSelectionChange)
       closeSlash()
       if (selPop) selPop.close()

@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 
+import { assetUrl } from '../static-assets.mjs'
 import { escapeHtml as e } from '../text.mjs'
 
 const WORDMARK = readFileSync(new URL('../../web/wordmark.svg', import.meta.url), 'utf8').trim()
@@ -44,14 +45,14 @@ export function layout({ title, body, siteName, principal, bodyClass = '', headE
 <meta name="robots" content="noindex, nofollow">
 <title>${e(title)}</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/app.css">
-<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="${assetUrl('app.css')}">
+<script src="${assetUrl('theme.js')}"></script>
 ${headExtra}
 </head>
 <body class="${e(bodyClass)}">
 ${header}
 ${body}
-<script src="/static/app.js" defer></script>
+<script src="${assetUrl('app.js')}" defer></script>
 </body>
 </html>`
 }
@@ -287,7 +288,10 @@ export function errorPage({ siteName, status, title, message, principal }) {
  * address), then the SDK and the view. The view draws the home (the field, the library) or one document's content.
  */
 export function appViewPage({ siteName }) {
-  const scripts = ['util', 'md', 'text-doc', 'panel', 'html-doc', 'doc', 'app'].map((name) => `<script src="/static/docs/${name}.js"></script>`).join('\n')
+  // The list needs the shell only; a document's editor, comments and chat come with the first document (HRN-1516).
+  const scripts = ['util', 'doc', 'app'].map((name) => `<script src="${assetUrl(`docs/${name}.js`)}"></script>`).join('\n')
+  // The editor's scripts, named in util.js; the page gives their content versions.
+  const lazy = JSON.stringify(Object.fromEntries(['md', 'text-doc', 'panel', 'html-doc'].map((name) => [name, assetUrl(`docs/${name}.js`).split('?v=')[1]])))
   return `<!doctype html>
 <html lang="ru">
 <head>
@@ -295,14 +299,16 @@ export function appViewPage({ siteName }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${e(siteName)}</title>
-<script src="/static/hl/bridge-shim.js"></script>
-<link rel="stylesheet" href="/static/docs/fonts.css">
-<link rel="stylesheet" href="/static/docs/docs.css">
+<script src="${assetUrl('hl/bridge-shim.js')}"></script>
+<link rel="preload" href="/static/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${assetUrl('docs/fonts.css')}">
+<link rel="stylesheet" href="${assetUrl('docs/docs.css')}">
 </head>
 <body>
 <div id="app" aria-busy="true"></div>
-<script src="/static/docs/icons.js"></script>
-<script src="/static/hl/app-sdk.classic.js"></script>
+<script type="application/json" id="dx-lazy">${lazy}</script>
+<script src="${assetUrl('docs/icons.js')}"></script>
+<script src="${assetUrl('hl/app-sdk.classic.js')}"></script>
 ${scripts}
 </body>
 </html>

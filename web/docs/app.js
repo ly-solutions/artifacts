@@ -285,6 +285,8 @@
           if (state.hub) moreBtn.hidden = false
           state.next = found.nextOffset
           draw()
+          // The list is on screen: the editor is fetched while the person reads it, so the first document opens at once.
+          DX.prefetch('doc')
         },
         function (error) { if (!dead && mine === asked) failed(error) },
       )

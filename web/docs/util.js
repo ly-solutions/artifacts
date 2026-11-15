@@ -40,18 +40,91 @@
   }
   var h = DX.h
 
+  /**
+   * Scripts that the first screen does not need, by group (HRN-1516). The files are named here; the page gives only
+   * their content versions (`<script type="application/json" id="dx-lazy">`). `DX.need('doc')` loads a group once, in
+   * order, and resolves when it ran.
+   */
+  var GROUPS = { doc: ['md', 'text-doc', 'panel', 'html-doc'] }
+  var versions = null
+  var loading = {}
+  DX.need = function (group) {
+    if (loading[group]) return loading[group]
+    var files = DX.need.files(group)
+    loading[group] = Promise.all(files.map(function (src) {
+      return new Promise(function (resolve, reject) {
+        var s = document.createElement('script')
+        s.src = src
+        s.async = false
+        s.onload = resolve
+        s.onerror = function () { reject(new Error('Не загрузился ' + src)) }
+        document.head.appendChild(s)
+      })
+    })).catch(function (error) {
+      delete loading[group]
+      throw error
+    })
+    return loading[group]
+  }
+  DX.need.files = function (group) {
+    if (!versions) {
+      var tag = document.getElementById('dx-lazy')
+      try {
+        versions = tag ? JSON.parse(tag.textContent) : {}
+      } catch (_) {
+        versions = {}
+      }
+    }
+    return (GROUPS[group] || []).map(function (name) {
+      var v = versions[name]
+      return '/static/docs/' + name + '.js' + (typeof v === 'string' ? '?v=' + encodeURIComponent(v) : '')
+    })
+  }
+
+  /**
+   * `mutate()` moves `el` sideways (a panel opens and the text makes room): it is laid out once in its new place and
+   * slides there with a transform, on the compositor (HRN-1516). A long text laid out every frame of a padding
+   * transition dropped frames.
+   */
+  DX.slide = function (el, mutate) {
+    var still = !el || !el.animate || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    var before = still ? 0 : el.getBoundingClientRect().left
+    mutate()
+    if (still) return
+    var dx = before - el.getBoundingClientRect().left
+    if (Math.abs(dx) < 1) return
+    el.animate([{ transform: 'translateX(' + Math.round(dx) + 'px)' }, { transform: 'translateX(0)' }], { duration: 280, easing: 'cubic-bezier(0.2, 0, 0, 1)' })
+  }
+
+  /** Puts a group into the browser's cache without running it (the list warms the editor up for the first open). */
+  var prefetched = {}
+  DX.prefetch = function (group) {
+    if (prefetched[group] || loading[group]) return
+    prefetched[group] = true
+    DX.need.files(group).forEach(function (src) {
+      document.head.appendChild(h('link', { rel: 'prefetch', href: src, as: 'script' }))
+    })
+  }
+
+  // Each icon is parsed once and cloned after that: a document with comments draws hundreds (HRN-1516).
+  var iconCache = {}
   DX.icon = function (name, cls) {
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.setAttribute('viewBox', '0 0 24 24')
-    svg.setAttribute('fill', 'none')
-    svg.setAttribute('stroke', 'currentColor')
-    svg.setAttribute('stroke-width', '1.75')
-    svg.setAttribute('stroke-linecap', 'round')
-    svg.setAttribute('stroke-linejoin', 'round')
-    svg.setAttribute('aria-hidden', 'true')
+    var proto = iconCache[name]
+    if (!proto) {
+      proto = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      proto.setAttribute('viewBox', '0 0 24 24')
+      proto.setAttribute('fill', 'none')
+      proto.setAttribute('stroke', 'currentColor')
+      proto.setAttribute('stroke-width', '1.75')
+      proto.setAttribute('stroke-linecap', 'round')
+      proto.setAttribute('stroke-linejoin', 'round')
+      proto.setAttribute('aria-hidden', 'true')
+      // The inner markup is our own constant (icons.js), never document content.
+      proto.innerHTML = (window.DX_ICONS && window.DX_ICONS[name]) || ''
+      if (window.DX_ICONS && window.DX_ICONS[name]) iconCache[name] = proto
+    }
+    var svg = proto.cloneNode(true)
     svg.setAttribute('class', 'ic' + (cls ? ' ' + cls : ''))
-    // The inner markup is our own constant (icons.js), never document content.
-    svg.innerHTML = (window.DX_ICONS && window.DX_ICONS[name]) || ''
     return svg
   }
 

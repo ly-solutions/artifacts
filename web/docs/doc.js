@@ -44,7 +44,8 @@
     }
 
     function start() {
-      return Promise.all([load(), DX.fetchJson('/app/comments?slug=' + encodeURIComponent(slug))]).then(function (res) {
+      // The editor, the comments and the chat are their own scripts (HRN-1516): fetched with the document, not before.
+      return Promise.all([load(), DX.fetchJson('/app/comments?slug=' + encodeURIComponent(slug)), DX.need('doc')]).then(function (res) {
         if (dead) return
         var data = res[0]
         if (!data) return
@@ -452,6 +453,7 @@
       left.appendChild(toolsEl)
       doc.appendChild(left)
       rightEl = h('div.isl.dtop-r')
+      rightBtns = null
       doc.appendChild(rightEl)
       drawModeSeg()
       drawTools()
@@ -496,8 +498,15 @@
       if (ctx.canComment()) toolsEl.appendChild(DX.ib('message-circle', 'Комментарий к элементу', function () { ctrl.setTool(ctrl.tool() === 'comment' ? 'select' : 'comment') }, { tp: 'd', on: ctrl.tool() === 'comment' }))
     }
 
+    var rightSig = null
+    var rightBtns = null
     function drawRight() {
       if (!rightEl) return
+      // The islands are drawn again only when the people or the count changed; opening the panel just lights a button
+      // (rebuilding them under the pointer cost a style pass over the whole text, HRN-1516).
+      var sig = threads.map(function (t) { return t.status + t.messages.map(function (m) { return m.author.kind + m.author.name }).join(',') }).join(';') + '|' + ctx.data.author
+      if (rightBtns && sig === rightSig) return lightRight()
+      rightSig = sig
       rightEl.textContent = ''
       var people = {}
       var names = []
@@ -519,12 +528,21 @@
       var cb = DX.ib('message-square', 'Комментарии', function () { if (panel.isOpen() && panel.tab() === 'comments') panel.close(); else panel.open('comments') }, { tp: 'dl', on: panel && panel.isOpen() && panel.tab() === 'comments' })
       if (open) cb.appendChild(h('span.cnt', String(open)))
       rightEl.appendChild(cb)
-      rightEl.appendChild(DX.ib('sparkles', 'Чат с агентом', function () { if (panel.isOpen() && panel.tab() === 'chat') panel.close(); else panel.open('chat') }, { tp: 'dl', on: panel && panel.isOpen() && panel.tab() === 'chat' }))
+      var chatBtn = DX.ib('sparkles', 'Чат с агентом', function () { if (panel.isOpen() && panel.tab() === 'chat') panel.close(); else panel.open('chat') }, { tp: 'dl', on: panel && panel.isOpen() && panel.tab() === 'chat' })
+      rightEl.appendChild(chatBtn)
       var more = DX.ib('ellipsis', 'Ещё', function () {
         // harnessly's own actions first (HRN-1498): it draws no bar above the app.
         ;(shell.hostActions ? shell.hostActions() : Promise.resolve([])).then(function (list) { moreMenu(more, list) })
       }, { tp: 'dl' })
       rightEl.appendChild(more)
+      rightBtns = { comments: cb, chat: chatBtn }
+    }
+    function lightRight() {
+      var on = { comments: panel && panel.isOpen() && panel.tab() === 'comments', chat: panel && panel.isOpen() && panel.tab() === 'chat' }
+      Object.keys(rightBtns).forEach(function (k) {
+        if (on[k]) rightBtns[k].dataset.on = 'true'
+        else delete rightBtns[k].dataset.on
+      })
     }
 
     // ---- ⋯ ----
