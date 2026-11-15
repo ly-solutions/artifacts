@@ -203,13 +203,13 @@ describe('harnessly mode', () => {
   })
 
   describe('MCP', () => {
-    it('initializes and lists the four tools, none of them publishes', async () => {
+    it('initializes and lists the tools, none of them publishes', async () => {
       const init = await mcp(hub.token(), 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } })
       assert.equal(init.status, 200)
       assert.equal(init.data.result.protocolVersion, '2025-06-18')
       assert.match(init.data.result.instructions, /through the harnessly hub/)
       const list = await mcp(hub.token(), 'tools/list', {})
-      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_signin', 'doc_open', 'doc_share'])
+      assert.deepEqual(list.data.result.tools.map((tool) => tool.name), ['doc_find', 'doc_show', 'doc_versions', 'doc_signin', 'doc_open', 'doc_comments', 'doc_reply', 'doc_comment', 'doc_edit', 'doc_share'])
     })
 
     it('acknowledges notifications with 202', async () => {

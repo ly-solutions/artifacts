@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The app view is redesigned after the Sinopia prototype «Документы 2.0» (`web/docs/`): a list with search, tabs and
+  groups; a text document you edit in place (blocks, «/» menu, selection bar, Markdown stays the source); an HTML page
+  you edit visually (select an element, Style island, «у всех таких же», page CSS, text in place, undo/redo, device
+  preview); comments on words and on page elements with threads, reactions and `@агент`; versions, conflict banner
+  and autosave; light and dark themes and a phone layout.
+- Comments live here (`comments/<slug>.json`, `GET/POST /app/comments…`), with MCP tools `doc_comments`, `doc_reply`,
+  `doc_comment` and `doc_edit`: the agent answers a thread and changes one fragment as a new version the person can
+  undo. See docs/mcp.md.
+- The app package is 0.5.0.
+
 ### Changed
 
 - The harnessly app view (`/app`) is a site of its own: it reads the catalog (`GET /app/docs`) and a document

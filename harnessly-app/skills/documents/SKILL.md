@@ -15,6 +15,10 @@ description: Документы команды (каталог с версиям
 | `doc_find` | `query`, `tags`, `task`, `limit` (≤ 50), `offset` | `items` (slug, title, description, tags, author, updatedAt, versions, url, snippet), `total`, `nextOffset` |
 | `doc_show` | `slug`, `version` (номер или id; по умолчанию текущая), `format` (`markdown`, `text`, `html`) | метаданные и `content` (длинный обрезается, `truncated: true`) |
 | `doc_versions` | `slug` | версии, свежие сверху |
+| `doc_comments` | `slug`, `status` (`open`, `resolved`, `all`), `thread` | треды: где привязаны (слова или элемент страницы), кто что сказал, открыт ли |
+| `doc_reply` | `slug`, `thread`, `text`, `resolve` | ответ в треде; `resolve: true` закрывает его |
+| `doc_comment` | `slug`, `text`, `quote` | новый тред на цитате или на всём документе |
+| `doc_edit` | `slug`, `find`, `replace`, `thread`, `reply`, `note` | заменяет один фрагмент (в документе он ровно один): новая версия того же документа, человек видит подсветку и может отменить. С `thread` — вместе с ответом. Нужно право править |
 | `doc_share` | `slug`, `public` (по умолчанию `true`), `expiresIn` (`7d`, `12h`) | ссылка и срок; `public: false` закрывает все ссылки. Нужно право править |
 
 ## Найти, прежде чем писать

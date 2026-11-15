@@ -287,6 +287,7 @@ export function errorPage({ siteName, status, title, message, principal }) {
  * address), then the SDK and the view. The view draws the home (the field, the library) or one document's content.
  */
 export function appViewPage({ siteName }) {
+  const scripts = ['util', 'md', 'text-doc', 'panel', 'html-doc', 'doc', 'app'].map((name) => `<script src="/static/docs/${name}.js"></script>`).join('\n')
   return `<!doctype html>
 <html lang="ru">
 <head>
@@ -295,14 +296,16 @@ export function appViewPage({ siteName }) {
 <meta name="robots" content="noindex">
 <title>${e(siteName)}</title>
 <script src="/static/hl/bridge-shim.js"></script>
-<link rel="stylesheet" href="/static/hl/hl-ui.css">
-<link rel="stylesheet" href="/static/app-view.css">
+<link rel="stylesheet" href="/static/docs/fonts.css">
+<link rel="stylesheet" href="/static/docs/docs.css">
 </head>
-<body class="hl-body">
-<div id="app" class="dv" aria-busy="true"></div>
+<body>
+<div id="app" aria-busy="true"></div>
+<script src="/static/docs/icons.js"></script>
 <script src="/static/hl/app-sdk.classic.js"></script>
-<script src="/static/app-view.js"></script>
+${scripts}
 </body>
 </html>
 `
 }
+
