@@ -513,16 +513,21 @@
       if (open) cb.appendChild(h('span.cnt', String(open)))
       rightEl.appendChild(cb)
       rightEl.appendChild(DX.ib('sparkles', 'Чат с агентом', function () { if (panel.isOpen() && panel.tab() === 'chat') panel.close(); else panel.open('chat') }, { tp: 'dl', on: panel && panel.isOpen() && panel.tab() === 'chat' }))
-      var more = DX.ib('ellipsis', 'Ещё', function () { moreMenu(more) }, { tp: 'dl' })
+      var more = DX.ib('ellipsis', 'Ещё', function () {
+        // harnessly's own actions first (HRN-1498): it draws no bar above the app.
+        ;(shell.hostActions ? shell.hostActions() : Promise.resolve([])).then(function (list) { moreMenu(more, list) })
+      }, { tp: 'dl' })
       rightEl.appendChild(more)
     }
 
     // ---- ⋯ ----
 
-    function moreMenu(anchor) {
+    function moreMenu(anchor, host) {
       var d = ctx.data
       DX.popover(anchor, function (close) {
         var box = h('div')
+        var hostBox = host && host.length && shell.hostRows ? shell.hostRows(host, close) : null
+        if (hostBox) box.appendChild(hostBox)
         box.appendChild(DX.mi('history', 'История версий', function () { close(); versionsMenu(anchor) }, { hint: 'версия ' + d.version.n }))
         box.appendChild(DX.mi('link', 'Копировать ссылку', function () { close(); ctx.copyLink() }))
         box.appendChild(h('div.msep'))
