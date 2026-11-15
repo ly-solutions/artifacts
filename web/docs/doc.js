@@ -840,6 +840,15 @@
         void rect
       },
       ctx: ctx,
+      /** A fast voice edit was saved by the host: the new version is shown and the changed place lit (HRN-1466). */
+      quickEdit: function (hint) {
+        return refreshDoc(false).then(function () {
+          if (dead) return
+          var lines = String(hint || '').split('\n').map(function (l) { return l.replace(/^[\s#>*+\-\d.)]+/, '').replace(/[*_`~]/g, '').trim() }).filter(Boolean)
+          var lit = ctrl && ctrl.revealText && lines.some(function (l) { return ctrl.revealText(l) })
+          if (!lit) DX.toast('Документ обновлён голосовой правкой')
+        }, function () {})
+      },
     }
     start().catch(function (error) {
       if (dead) return

@@ -43,5 +43,10 @@
     "frames": [
       "${install:artifactsUrl}"
     ]
+  },
+  "quickEdit": {
+    "read": "docs.quick_read",
+    "apply": "docs.quick_apply",
+    "undo": "docs.quick_undo"
   }
 }

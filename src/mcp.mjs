@@ -156,6 +156,48 @@ export const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
+    name: 'quick_read',
+    title: 'Read a document for a quick edit',
+    description: 'The document as text for a fast voice edit: its title, its source as stored (Markdown, or the HTML of a page) and the current version. Needs the right to edit.',
+    inputSchema: {
+      type: 'object',
+      properties: { object: slugProp, selection: { type: 'string', description: 'What the person has selected, if anything (not needed to read).' } },
+      required: ['object'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'quick_apply',
+    title: 'Apply exact replacements',
+    description:
+      'Replace exact fragments of the current source in one new version. `version` is the one quick_read gave: another current version is a `conflict`; every `old` must occur exactly once (`not_unique`); an edit that removes a whole line needs confirmed: true (`needs_yes`). Errors are JSON {code, message}. Needs the right to edit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        object: slugProp,
+        version: { type: 'string', description: 'The version the edits were made against.' },
+        edits: { type: 'array', items: { type: 'object', properties: { old: { type: 'string' }, new: { type: 'string' } }, required: ['old', 'new'], additionalProperties: false } },
+        confirmed: { type: 'boolean', description: 'The person agreed to removing lines.' },
+      },
+      required: ['object', 'version', 'edits'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: 'quick_undo',
+    title: 'Undo a quick edit',
+    description: 'When the current version is `version` (the one quick_apply returned), publish the previous content as a new version. Another current version is a `conflict`; the first version has `nothing_to_undo`. Needs the right to edit.',
+    inputSchema: {
+      type: 'object',
+      properties: { object: slugProp, version: { type: 'string' } },
+      required: ['object', 'version'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
     name: 'doc_share',
     title: 'Share a document',
     description: 'Open a document by link (public: true, the default) and get the link, or close it and revoke every link (public: false). Needs the right to edit the document.',
@@ -174,6 +216,23 @@ export const TOOLS = [
 ]
 
 class ToolError extends Error {}
+/** A failure of a quick_* tool: the host reads `code` from the JSON text of the result. */
+class QuickError extends Error {
+  constructor(code, message) {
+    super(message)
+    this.code = code
+  }
+}
+
+const sameLines = (text) => text.split('\n').length
+/** The line(s) of `text` around the span [from, to), as written. */
+function linesAround(text, from, to) {
+  const start = text.lastIndexOf('\n', from - 1) + 1
+  const end = text.indexOf('\n', to)
+  return text.slice(start, end === -1 ? text.length : end)
+}
+/** Whether the span [from, to) of `source` is made of whole lines. */
+const wholeLines = (source, from, to) => (from === 0 || source[from - 1] === '\n') && (to === source.length || source[to] === '\n' || source[to - 1] === '\n')
 
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } })
 
@@ -197,6 +256,37 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
     const access = await docAccess(principal, slug)
     if (!mayComment(access, principal)) throw new ToolError('you can read this document but not comment on it')
     return access
+  }
+
+  const quickSource = (content, kind) => (kind === 'text' ? (content.markdown ?? '') : (content.html ?? ''))
+
+  /** The document of a quick_* call, for someone who may edit it: its current content and kind. */
+  async function quickDoc(principal, args) {
+    if (!isValidSlug(args.object)) throw new QuickError('invalid', 'нужен адрес документа')
+    const slug = args.object
+    try {
+      await docAccess(principal, slug, { need: 'write' })
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'forbidden') throw new QuickError('forbidden', 'нет права править документ')
+      if (error instanceof ApiError && error.code === 'not_found') throw new QuickError('not_found', 'документ не найден')
+      throw error
+    }
+    const { meta } = await service.get(slug)
+    const content = await service.readContent(slug, null)
+    return { slug, content, kind: kindOfMeta(meta) }
+  }
+
+  async function quickPublish(principal, slug, kind, text, baseVersion, note) {
+    const name = principal.name || principal.email || 'Голос'
+    const publish = { slug, author: name, baseVersion, note }
+    if (kind === 'text') publish.markdown = text
+    else publish.html = text
+    try {
+      return await service.publish(publish, { name, role: 'editor', via: 'bearer' })
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'version_conflict') throw new QuickError('conflict', 'документ уже изменился')
+      throw error
+    }
   }
 
   const tools = {
@@ -346,6 +436,53 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
       return out
     },
 
+    async quick_read(principal, args) {
+      const { content, kind } = await quickDoc(principal, args)
+      const artifact = service.present(content.meta)
+      return { kind: 'document', title: artifact.title, text: quickSource(content, kind), version: String(content.n) }
+    },
+
+    async quick_apply(principal, args) {
+      const { slug, content, kind } = await quickDoc(principal, args)
+      if (String(args.version) !== String(content.n)) throw new QuickError('conflict', 'документ уже изменился')
+      if (!Array.isArray(args.edits) || !args.edits.length || args.edits.some((e) => !e || typeof e.old !== 'string' || typeof e.new !== 'string' || !e.old.length)) {
+        throw new QuickError('invalid', 'нужны правки: old и new')
+      }
+      const source = quickSource(content, kind)
+      const spans = args.edits.map((edit) => {
+        const from = source.indexOf(edit.old)
+        if (from === -1 || source.indexOf(edit.old, from + edit.old.length) !== -1) throw new QuickError('not_unique', 'фрагмент не найден или встречается не один раз')
+        return { from, to: from + edit.old.length, old: edit.old, next: edit.new }
+      })
+      spans.sort((a, b) => a.from - b.from)
+      for (let i = 1; i < spans.length; i += 1) if (spans[i].from < spans[i - 1].to) throw new QuickError('not_unique', 'правки пересекаются')
+      const removes = spans.some((s) => sameLines(s.next) < sameLines(s.old) || (s.next === '' && wholeLines(source, s.from, s.to)))
+      if (removes && args.confirmed !== true) throw new QuickError('needs_yes', 'правка удаляет строки: нужно подтверждение')
+      let text = ''
+      let at = 0
+      for (const s of spans) {
+        text += source.slice(at, s.from)
+        s.start = text.length
+        text += s.next
+        s.end = text.length
+        at = s.to
+      }
+      text += source.slice(at)
+      if (text === source) return { changed: false, version: String(content.n), hint: '' }
+      const hint = [...new Set(spans.map((s) => linesAround(text, s.start, s.end).trim()).filter(Boolean))].join('\n').slice(0, 400)
+      const result = await quickPublish(principal, slug, kind, text, content.n, 'Голосовая правка')
+      return { changed: true, version: String(result.version.n), hint }
+    },
+
+    async quick_undo(principal, args) {
+      const { slug, content, kind } = await quickDoc(principal, args)
+      if (String(args.version) !== String(content.n)) throw new QuickError('conflict', 'документ уже изменился')
+      if (content.n <= 1) throw new QuickError('nothing_to_undo', 'отменять нечего')
+      const before = await service.readContent(slug, String(content.n - 1))
+      const result = await quickPublish(principal, slug, kind, quickSource(before, kind), content.n, 'Отмена голосовой правки')
+      return { changed: true, version: String(result.version.n) }
+    },
+
     async doc_share(principal, args) {
       const slug = slugOf(args)
       await docAccess(principal, slug, { need: 'share' })
@@ -372,6 +509,12 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
       const data = await tool(principal, args)
       return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data }
     } catch (error) {
+      if (String(params?.name).startsWith('quick_')) {
+        const code = error instanceof QuickError ? error.code : error instanceof ApiError ? error.code : error instanceof HubRightsError ? 'unavailable' : null
+        if (!code) throw error
+        const message = error instanceof QuickError ? error.message : error instanceof HubRightsError ? 'права пока не получены, повторите' : 'не получилось сохранить'
+        return { content: [{ type: 'text', text: JSON.stringify({ code, message }) }], isError: true }
+      }
       let message
       if (error instanceof ToolError) message = error.message
       else if (error instanceof HubRightsError) message = 'the hub did not answer who may read this document; try again in a minute'
