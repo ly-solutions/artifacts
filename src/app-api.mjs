@@ -7,6 +7,7 @@
  */
 import { canRead, canWrite } from './auth/index.mjs'
 import { CommentError, mayComment, mentionsAgent, personId } from './comments.mjs'
+import { HubDocsError } from './auth/harnessly.mjs'
 import { ApiError } from './service.mjs'
 import { isFullDocument, isValidSlug } from './text.mjs'
 
@@ -30,7 +31,7 @@ export function replaceOnce(source, needle, replacement) {
   return source.slice(0, first) + replacement + source.slice(first + needle.length)
 }
 
-export function createAppApi({ config, service, comments, docAccess, searchFor, json, readJson, checkSameOrigin, issueViewTicket, ancestorsOrigin }) {
+export function createAppApi({ config, service, comments, trash, hubDocs, forgetRights, docAccess, searchFor, json, readJson, checkSameOrigin, issueViewTicket, ancestorsOrigin }) {
   const BODY = 64 * 1024
   const contentLimit = Math.ceil(config.content.maxBytes * 1.5) + 256 * 1024
   void ancestorsOrigin
@@ -47,7 +48,18 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
     share: access.share === true,
   })
 
-  const canCreate = (principal) => !principal.hub && canWrite(principal)
+  const canCreate = (principal) => (principal.hub ? Boolean(hubDocs && principal.token) : canWrite(principal))
+
+  /** A refusal of the hub, told to the page in the hub's words; a token that no longer works asks the page to sign in again. */
+  async function viaHub(fn) {
+    try {
+      return await fn()
+    } catch (error) {
+      if (!(error instanceof HubDocsError)) throw error
+      if (error.status === 401) throw new ApiError(401, 'unauthorized', { hint: 'sign in again: the hub did not accept the sign-in' })
+      throw new ApiError(error.status >= 400 && error.status < 600 ? error.status : 502, error.code, { hint: error.message, ...(error.details ? { extra: { details: error.details } } : {}) })
+    }
+  }
 
   function listItem(item, principal, access) {
     const entry = service.catalog.entries.get(item.slug)
@@ -78,7 +90,7 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
     const limit = Math.min(Math.max(Math.floor(Number(url.searchParams.get('limit') ?? MAX_LIST)) || MAX_LIST, 1), MAX_LIST)
     const offset = Math.max(Math.floor(Number(url.searchParams.get('offset') ?? 0)) || 0, 0)
     const result = await searchFor(principal, { q: url.searchParams.get('q') ?? '', tags: [], limit, offset })
-    return json(res, 200, { total: result.total, nextOffset: result.nextOffset ?? null, canCreate: canCreate(principal), items: result.items.map((item) => listItem(item, principal)) })
+    return json(res, 200, { total: result.total, nextOffset: result.nextOffset ?? null, canCreate: canCreate(principal), hub: Boolean(principal.hub), items: result.items.map((item) => listItem(item, principal)) })
   }
 
   async function doc(res, url, principal) {
@@ -107,6 +119,7 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
       kind,
       version: { n, of: meta.versions.length, id: version.id, current },
       versions: artifact.versions.map((v) => ({ n: v.n, id: v.id, createdAt: v.createdAt, author: v.author ?? null, note: v.note ?? null })),
+      hub: Boolean(principal.hub),
       rights: { ...rights, write: rights.write && current, restore: rights.write && !current, create: canCreate(principal) },
       me: { name: personName(principal) },
       contentUrl: `/a/${slug}/raw?t=${encodeURIComponent(issueViewTicket(slug))}&v=${n}${theme}`,
@@ -146,11 +159,41 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
 
   async function create(req, res, principal) {
     checkSameOrigin(req, principal)
-    if (!canCreate(principal)) throw new ApiError(403, 'forbidden', { hint: 'documents of a harnessly installation are published through the hub: ask the agent' })
+    if (!canCreate(principal)) throw new ApiError(403, 'forbidden', { hint: 'you cannot make documents here' })
     const body = await readJson(req, contentLimit)
-    const title = String(body.title ?? '').trim().slice(0, 200) || 'Новый документ'
-    const markdown = typeof body.markdown === 'string' && body.markdown.trim() ? body.markdown : `# ${title}\n\n`
-    const result = await service.publish({ title, markdown, new: true, author: personName(principal), tags: Array.isArray(body.tags) ? body.tags : undefined }, { name: personName(principal), role: 'editor', via: principal.via })
+    const title = String(body.title ?? '').trim().slice(0, 200)
+    if (principal.hub) {
+      const ask = { kind: 'artifact', ...(title ? { title } : {}) }
+      if (typeof body.template === 'string' && body.template) ask.template = body.template
+      else if (typeof body.markdown === 'string' && body.markdown.trim()) ask.markdown = body.markdown
+      if (typeof body.spaceId === 'string' && body.spaceId) ask.spaceId = body.spaceId
+      const made = await viaHub(() => hubDocs.create(principal, ask))
+      return json(res, 201, { slug: made.doc?.slug, doc: made.doc })
+    }
+    const name = title || 'Новый документ'
+    const markdown = typeof body.markdown === 'string' && body.markdown.trim() ? body.markdown : `# ${name}\n\n`
+    const result = await service.publish({ title: name, markdown, new: true, author: personName(principal), tags: Array.isArray(body.tags) ? body.tags : undefined }, { name: personName(principal), role: 'editor', via: principal.via })
+    return json(res, 201, { slug: result.meta.slug })
+  }
+
+  async function duplicate(req, res, principal) {
+    checkSameOrigin(req, principal)
+    const body = await readJson(req, BODY)
+    if (!isValidSlug(body.slug)) throw new ApiError(404, 'not_found')
+    const title = String(body.title ?? '').trim().slice(0, 200)
+    if (principal.hub) {
+      const made = await viaHub(() => hubDocs.duplicate(principal, body.slug, { ...(title ? { title } : {}), ...(typeof body.spaceId === 'string' && body.spaceId ? { spaceId: body.spaceId } : {}) }))
+      return json(res, 201, { slug: made.doc?.slug, doc: made.doc })
+    }
+    await docAccess(principal, body.slug)
+    if (!canCreate(principal)) throw new ApiError(403, 'forbidden', { hint: 'you cannot make documents here' })
+    const { meta } = await service.get(body.slug)
+    const content = await service.readContent(body.slug, null)
+    const name = title || `${meta.title} (копия)`.slice(0, 200)
+    const publish = { title: name, new: true, author: personName(principal), tags: meta.tags }
+    if (typeof content.html === 'string' && content.html) publish.html = content.html
+    else publish.markdown = content.markdown ?? ''
+    const result = await service.publish(publish, { name: personName(principal), role: 'editor', via: principal.via })
     return json(res, 201, { slug: result.meta.slug })
   }
 
@@ -158,9 +201,13 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
     checkSameOrigin(req, principal)
     const body = await readJson(req, BODY)
     if (!isValidSlug(body.slug)) throw new ApiError(404, 'not_found')
-    await docAccess(principal, body.slug, { need: 'write' })
     const title = String(body.title ?? '').trim()
-    if (!title || title.length > 200) throw new ApiError(400, 'invalid', { problems: ['title: 1 to 200 characters'] })
+    if (title.length < 1 || title.length > 200) throw new ApiError(400, 'invalid', { problems: ['title: 1 to 200 characters'] })
+    if (principal.hub) {
+      await docAccess(principal, body.slug, { need: 'write' })
+      await viaHub(() => hubDocs.rename(principal, body.slug, title))
+    } else await docAccess(principal, body.slug, { need: 'write' })
+    // The hub keeps its own record of the title; the document here carries the same one.
     const { meta } = await service.updateMeta(body.slug, { title })
     return json(res, 200, { title: meta.title })
   }
@@ -169,11 +216,35 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
     checkSameOrigin(req, principal)
     const slug = url.searchParams.get('slug') ?? ''
     if (!isValidSlug(slug)) throw new ApiError(404, 'not_found')
+    if (principal.hub) {
+      // Into the hub's trash: the hub decides who may (the owner or an administrator), and nothing is deleted.
+      await viaHub(() => hubDocs.trash(principal, slug))
+      await trash.set(slug, true, personName(principal))
+      forgetRights?.(slug)
+      return json(res, 200, { trashed: true, slug })
+    }
     await docAccess(principal, slug, { need: 'write' })
-    if (principal.hub) throw new ApiError(403, 'forbidden', { hint: 'a document of a harnessly installation is deleted through the hub' })
     await service.remove(slug)
     await comments.remove(slug)
     return json(res, 200, { deleted: true })
+  }
+
+  async function restoreFromTrash(req, res, principal) {
+    checkSameOrigin(req, principal)
+    const body = await readJson(req, BODY)
+    if (!principal.hub) throw new ApiError(404, 'not_found')
+    if (!isValidSlug(body.slug)) throw new ApiError(404, 'not_found')
+    const out = await viaHub(() => hubDocs.restore(principal, body.slug))
+    await trash.set(body.slug, false)
+    forgetRights?.(body.slug)
+    return json(res, 200, { slug: body.slug, doc: out.doc })
+  }
+
+  async function trashList(res, principal) {
+    if (!principal.hub) return json(res, 200, { docs: [] })
+    const out = await viaHub(() => hubDocs.trashList(principal))
+    const docs = (Array.isArray(out.docs) ? out.docs : []).filter((d) => d && d.kind !== 'board')
+    return json(res, 200, { docs })
   }
 
   async function restore(req, res, principal) {
@@ -283,10 +354,13 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
       if (path === '/app/doc') return (await doc(res, url, principal), true)
       if (path === '/app/state') return (await state(res, url, principal), true)
       if (path === '/app/comments') return (await threads(res, url, principal), true)
+      if (path === '/app/trash') return (await trashList(res, principal), true)
       return false
     }
     if (method === 'PUT' && path === '/app/doc') return (await save(req, res, principal), true)
     if (method === 'POST' && path === '/app/docs') return (await create(req, res, principal), true)
+    if (method === 'POST' && path === '/app/doc/duplicate') return (await duplicate(req, res, principal), true)
+    if (method === 'POST' && path === '/app/trash/restore') return (await restoreFromTrash(req, res, principal), true)
     if (method === 'PATCH' && path === '/app/doc') return (await rename(req, res, principal), true)
     if (method === 'DELETE' && path === '/app/doc') return (await remove(req, res, url, principal), true)
     if (method === 'POST' && path === '/app/restore') return (await restore(req, res, principal), true)

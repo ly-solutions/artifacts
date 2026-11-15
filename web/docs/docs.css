@@ -1987,3 +1987,41 @@ a {
 .page u {
   text-underline-offset: 2px;
 }
+
+/* The trash of the list */
+.trashpop .trash {
+  min-width: 300px;
+  max-width: 360px;
+  padding-bottom: 6px;
+}
+.trash .tl {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.trash .tr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.trash .tn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.trash em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--dx-fg3);
+  white-space: nowrap;
+}
+.trash .hint {
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--dx-fg2);
+}

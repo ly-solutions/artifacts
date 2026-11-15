@@ -155,6 +155,11 @@ export class HubRights {
     return out
   }
 
+  /** Forgets what was said about a document (it was just trashed or taken out of the trash: the answer changed). */
+  forget(slug) {
+    for (const key of this.cache.keys()) if (key.endsWith(`\n${slug}`)) this.cache.delete(key)
+  }
+
   async ask(sub, slugs) {
     let response
     try {
@@ -171,6 +176,76 @@ export class HubRights {
     const body = await response.json().catch(() => null)
     if (!body || typeof body.rights !== 'object' || body.rights === null) throw new HubRightsError('the hub sent no rights')
     return body.rights
+  }
+}
+
+/** The hub answered a documents request with a refusal; carries the hub's own status, code and words. */
+export class HubDocsError extends Error {
+  constructor(status, code, message, details) {
+    super(message)
+    this.status = status
+    this.code = code
+    this.details = details
+  }
+}
+
+/**
+ * Making, copying, renaming and trashing documents: the hub owns their records (HRN-1478), so a person's request goes
+ * to `<hub>/api/platform/docs` as that person: the documents' access token says who asks, the person's own app token
+ * (`X-Harnessly-Token`, signed by the hub for this service) says for whom. The hub decides what the person may do.
+ */
+export class HubDocs {
+  constructor({ issuer, accessToken, fetchImpl = fetch }) {
+    this.base = `${issuer}/api/platform/docs`
+    this.accessToken = accessToken
+    this.fetch = fetchImpl
+  }
+
+  async call(method, path, principal, body) {
+    if (!principal?.token) throw new HubDocsError(401, 'unauthenticated', 'the sign-in has no hub token: open the app again')
+    let response
+    try {
+      response = await this.fetch(`${this.base}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${this.accessToken}`,
+          'x-harnessly-token': principal.token,
+          accept: 'application/json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(20_000),
+      })
+    } catch (error) {
+      throw new HubDocsError(503, 'hub_unavailable', `the hub did not answer: ${error.message}`)
+    }
+    const data = await response.json().catch(() => null)
+    if (!response.ok) throw new HubDocsError(response.status, data?.error ?? 'hub_refused', data?.message ?? `the hub answered ${response.status}`, data?.details)
+    return data ?? {}
+  }
+
+  create(principal, body) {
+    return this.call('POST', '', principal, body)
+  }
+
+  duplicate(principal, slug, body) {
+    return this.call('POST', `/${encodeURIComponent(slug)}/duplicate`, principal, body ?? {})
+  }
+
+  rename(principal, slug, title) {
+    return this.call('PATCH', `/${encodeURIComponent(slug)}`, principal, { title })
+  }
+
+  trash(principal, slug) {
+    return this.call('DELETE', `/${encodeURIComponent(slug)}`, principal)
+  }
+
+  restore(principal, slug) {
+    return this.call('POST', `/${encodeURIComponent(slug)}/restore`, principal, {})
+  }
+
+  trashList(principal) {
+    return this.call('GET', '/_trash', principal)
   }
 }
 

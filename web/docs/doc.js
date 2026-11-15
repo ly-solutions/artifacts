@@ -378,9 +378,9 @@
           box.appendChild(h('div.mrow', h('span', 'Ширина'), segment([['narrow', 'Уже'], ['normal', 'Обычная'], ['wide', 'Шире']], pref.w, function (v) { pref.w = v; DX.pref.set('width', v); doc.dataset.w = v; close() })))
           box.appendChild(h('div.mrow', h('span', 'Шрифт'), segment([['sans', 'Без засечек'], ['serif', 'С засечками']], pref.f, function (v) { pref.f = v; DX.pref.set('font', v); doc.dataset.f = v; close() })))
         }
-        if (d.rights.create && d.rights.write) {
+        if (d.rights.create && (d.hub || d.rights.write)) {
           box.appendChild(h('div.msep'))
-          box.appendChild(DX.mi('trash-2', 'Удалить документ', function () { close(); confirmDelete(anchor) }, { danger: true }))
+          box.appendChild(DX.mi('trash-2', d.hub ? 'В корзину' : 'Удалить документ', function () { close(); if (d.hub) toTrash(); else confirmDelete(anchor) }, { danger: true }))
         }
         return box
       }, { align: 'end' })
@@ -414,6 +414,17 @@
         })
         return box
       }, { align: 'end' })
+    }
+
+    /** Into the hub's trash at once; «Отменить» in the toast takes it out again and reopens it. */
+    function toTrash() {
+      var title = ctx.data.title
+      DX.fetchJson('/app/doc?slug=' + encodeURIComponent(slug), { method: 'DELETE' }).then(function () {
+        shell.back()
+        DX.toast('«' + title + '» в корзине', { label: 'Отменить', run: function () {
+          DX.fetchJson('/app/trash/restore', { method: 'POST', body: { slug: slug } }).then(function () { shell.navigate(slug) }, function (e) { DX.toast(e.message) })
+        } })
+      }, function (e) { DX.toast(e.message) })
     }
 
     function confirmDelete(anchor) {
