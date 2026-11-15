@@ -87,3 +87,17 @@ describe('the call of the agent', () => {
     assert.equal(mentionsAgent('@агентство'), false)
   })
 })
+
+describe('who owns a thread', () => {
+  it('is a stable id, not a name', async () => {
+    const { cleanAuthor, personId, mayComment } = await import('../src/comments.mjs')
+    assert.equal(cleanAuthor({ name: 'Анна', kind: 'person', id: 'u1' }).id, 'u1')
+    assert.equal(cleanAuthor({ name: 'Агент', kind: 'agent', id: 'u1' }).id, undefined)
+    assert.equal(personId({ sub: 'u1', email: 'A@x.io' }), 'u1')
+    assert.equal(personId({ email: 'A@x.io' }), 'a@x.io')
+    assert.equal(personId({ name: 'Анна' }), null)
+    assert.equal(mayComment({ read: true, right: 'read' }, { hub: true }), false)
+    assert.equal(mayComment({ read: true, right: 'comment' }, { hub: true }), true)
+    assert.equal(mayComment({ read: true }, { hub: false }), true)
+  })
+})

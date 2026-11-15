@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 
 import { kindOfMeta, replaceOnce } from './app-api.mjs'
 import { canRead } from './auth/index.mjs'
-import { CommentError, MAX_TEXT } from './comments.mjs'
+import { CommentError, MAX_TEXT, mayComment } from './comments.mjs'
 import { HubRightsError } from './auth/harnessly.mjs'
 import { parseDuration } from './config.mjs'
 import { ApiError } from './service.mjs'
@@ -191,6 +191,13 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
     return args.slug
   }
 
+  /** Read access is not enough to speak in a document: the hub's comment or edit right is. */
+  async function commentAccess(principal, slug) {
+    const access = await docAccess(principal, slug)
+    if (!mayComment(access, principal)) throw new ToolError('you can read this document but not comment on it')
+    return access
+  }
+
   const tools = {
     async doc_find(principal, args) {
       const limit = Math.min(Math.max(Math.floor(Number(args.limit ?? 20)) || 20, 1), 50)
@@ -290,7 +297,7 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
 
     async doc_reply(principal, args) {
       const slug = slugOf(args)
-      await docAccess(principal, slug)
+      await commentAccess(principal, slug)
       const { result } = await comments.reply(slug, String(args.thread ?? ''), { text: args.text, author: { name: 'Агент', kind: 'agent' } })
       if (args.resolve === true) await comments.setStatus(slug, result.thread.id, 'resolved', 'Агент')
       return { slug, thread: result.thread.id, message: result.message.id, resolved: args.resolve === true }
@@ -298,7 +305,7 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
 
     async doc_comment(principal, args) {
       const slug = slugOf(args)
-      await docAccess(principal, slug)
+      await commentAccess(principal, slug)
       const quote = typeof args.quote === 'string' ? args.quote : ''
       const { result } = await comments.newThread(slug, { anchor: quote ? { kind: 'text', quote } : { kind: 'doc' }, text: args.text, author: { name: 'Агент', kind: 'agent' } })
       return { slug, thread: result.id }

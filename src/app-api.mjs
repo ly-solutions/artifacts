@@ -6,7 +6,7 @@
  * changes only what the hub allows. Writes come from this server's own pages only (checkSameOrigin).
  */
 import { canRead, canWrite } from './auth/index.mjs'
-import { CommentError, mentionsAgent } from './comments.mjs'
+import { CommentError, mayComment, mentionsAgent, personId } from './comments.mjs'
 import { ApiError } from './service.mjs'
 import { isFullDocument, isValidSlug } from './text.mjs'
 
@@ -43,7 +43,7 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
 
   const rightsOf = (access, principal) => ({
     write: access.write === true,
-    comment: principal.hub ? access.right === 'comment' || access.right === 'edit' || access.write === true : access.read === true,
+    comment: mayComment(access, principal),
     share: access.share === true,
   })
 
@@ -214,7 +214,7 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
     return access
   }
 
-  const asPerson = (principal) => ({ name: personName(principal), kind: 'person' })
+  const asPerson = (principal) => ({ name: personName(principal), kind: 'person', id: personId(principal) ?? undefined })
 
   const commentRoutes = wrapComment(async (req, res, principal, path) => {
     checkSameOrigin(req, principal)
@@ -238,7 +238,8 @@ export function createAppApi({ config, service, comments, docAccess, searchFor, 
     }
     if (path === '/app/comments/delete') {
       const mine = (await comments.list(body.slug)).threads.find((t) => t.id === body.thread)
-      const owner = mine?.messages[0]?.author?.name === personName(principal)
+      const me = personId(principal)
+      const owner = !!me && mine?.messages[0]?.author?.id === me
       if (!owner) await docAccess(principal, body.slug, { need: 'write' })
       const { rev } = await comments.removeThread(body.slug, String(body.thread))
       return json(res, 200, { rev })
