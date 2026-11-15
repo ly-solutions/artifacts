@@ -282,6 +282,8 @@ describe('harnessly mode', () => {
         const docs = await view.request('GET', '/app/docs', { token: null, headers: { cookie } })
         assert.equal(docs.status, 200)
         assert.deepEqual(docs.data.items.map((item) => item.slug).sort(), ['roadmap-comment', 'roadmap-edit', 'roadmap-open'])
+        // Each line says who has worked on the document (its authors, the latest last).
+        for (const item of docs.data.items) assert.ok(Array.isArray(item.people), item.slug)
         const doc = await view.request('GET', '/app/doc?slug=roadmap-open&theme=dark', { token: null, headers: { cookie } })
         assert.equal(doc.status, 200)
         assert.equal(doc.data.title, 'Roadmap open')

@@ -71,8 +71,18 @@
     // console error each time). The source is parsed with the attribute under another name and given its name back
     // when it is written: a document's text round-trips, and nothing is reported.
     var GUARD_ATTR = /(<[a-zA-Z][^<>]*?\s)style(\s*=)/g
-    var guard = function (html) { return String(html).replace(GUARD_ATTR, function (all, head, eq) { return head + 'data-dx-style' + eq }) }
-    var unguard = function (html) { return String(html).replace(/(\s)data-dx-style(\s*=)/g, '$1style$2') }
+    // A <style> element is refused the same way: it is parsed as a <script data-dx-was="style"> (its text stays as it is,
+    // nothing runs in a parsed-only document) and turned back when the source is written.
+    var guard = function (html) {
+      return String(html)
+        .replace(/<style\b([^>]*)>([\s\S]*?)<\/style\s*>/gi, function (all, attrs, css) { return '<script data-dx-was="style"' + attrs + '>' + css + '</script>' })
+        .replace(GUARD_ATTR, function (all, head, eq) { return head + 'data-dx-style' + eq })
+    }
+    var unguard = function (html) {
+      return String(html)
+        .replace(/<script data-dx-was="style"([^>]*)>([\s\S]*?)<\/script>/g, function (all, attrs, css) { return '<style' + attrs + '>' + css + '</style>' })
+        .replace(/(\s)data-dx-style(\s*=)/g, '$1style$2')
+    }
     /** The inline style of a node of the source as a style object (built off page, by the CSS object model). */
     function inlineStyle(node) {
       var probe = document.createElement('div')
@@ -133,7 +143,8 @@
         cssText = value
         var tag = srcDoc.getElementById('dx-page-css')
         if (!tag) {
-          tag = srcDoc.createElement('style')
+          tag = srcDoc.createElement('script')
+          tag.setAttribute('data-dx-was', 'style')
           tag.id = 'dx-page-css'
           ;(srcDoc.head || srcDoc.documentElement).appendChild(tag)
         }
@@ -217,6 +228,7 @@
         ready = true
         send({ t: 'mode', mode: effectiveMode() })
         ctrl.pins()
+        if (marks.length) send({ t: 'marks', paths: marks })
       } else if (m.t === 'selected') {
         selected = m.info
         palette = (m.palette || []).map(rgbToHex).filter(Boolean)
@@ -291,6 +303,57 @@
       return true
     }
     ctrl.revealText = function () { return false }
+    // ---- What an agent's turn changed: the elements that differ from the page before it ----
+    var marks = []
+    function ownText(node) {
+      var t = ''
+      for (var c = node.firstChild; c; c = c.nextSibling) if (c.nodeType === 3) t += c.nodeValue
+      return t.replace(/\s+/g, ' ').trim()
+    }
+    ctrl.changedSince = function (baseHtml) {
+      ensureParsed()
+      var a = new DOMParser().parseFromString(guard(baseHtml || ''), 'text/html').body
+      var b = srcDoc.body
+      var out = []
+      function walk(x, y, path) {
+        if (out.length >= 24 || x.outerHTML === y.outerHTML) return
+        var xc = x.children
+        var yc = y.children
+        if (xc.length === yc.length && xc.length && ownText(x) === ownText(y)) {
+          for (var i = 0; i < yc.length; i += 1) walk(xc[i], yc[i], path.concat(i))
+          return
+        }
+        if (xc.length !== yc.length) {
+          var had = {}
+          for (var k = 0; k < xc.length; k += 1) had[xc[k].outerHTML] = 1
+          var added = 0
+          for (var j = 0; j < yc.length; j += 1) {
+            if (!had[yc[j].outerHTML]) {
+              out.push(path.concat(j))
+              added += 1
+            }
+          }
+          if (added) return
+        }
+        if (path.length) out.push(path)
+      }
+      walk(a, b, [])
+      return out
+    }
+    ctrl.placesOf = function (targets) {
+      var seen = {}
+      targets.forEach(function (p) { seen[p[0]] = 1 })
+      return Object.keys(seen).length
+    }
+    ctrl.setMarks = function (targets) {
+      marks = targets || []
+      if (ready) send({ t: 'marks', paths: marks })
+    }
+    ctrl.flashTarget = function (path) {
+      if (!ready) return false
+      send({ t: 'flash', path: path })
+      return true
+    }
     ctrl.revision = function () { return rev }
     ctrl.dirty = function () { return rev !== savedRev }
     ctrl.markSaved = function (v) { savedRev = v }

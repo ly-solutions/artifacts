@@ -106,6 +106,8 @@ export function htmlToText(html) {
 export function markdownToText(markdown) {
   return String(markdown ?? '')
     .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*/g, ' '))
+    .replace(/\[!(?:NOTE|TIP|INFO|IMPORTANT|WARNING|CAUTION)\]/gi, ' ')
+    .replace(/<\/?(?:span|u)\b[^<>]*>/gi, '')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[#>*_`~|-]+/g, ' ')

@@ -27,6 +27,8 @@
   ]
   DX.SLASH_ITEMS = SLASH
 
+  /** The look of a callout: its icon (the colour is the tone's in the stylesheet). */
+  var TONES = { note: { icon: 'info' }, info: { icon: 'info' }, tip: { icon: 'lightbulb' }, important: { icon: 'circle-alert' }, warning: { icon: 'triangle-alert' }, caution: { icon: 'triangle-alert' } }
   var PLACEHOLDER = { para: 'Напишите что-нибудь или нажмите «/»', heading: 'Заголовок', quote: 'Цитата', callout: 'Мысль, которую нельзя пропустить' }
 
   function textOf(node) {
@@ -78,9 +80,12 @@
 
     function render() {
       page.textContent = ''
-      page.appendChild(headerEl())
+      // A text that starts with its own title carries the byline right under it.
+      var headAfter = !showsTitle() && blocks.length && blocks[0].type === 'heading' ? 0 : -1
+      if (headAfter < 0) page.appendChild(headerEl())
       blocks.forEach(function (b, i) {
         page.appendChild(blockEl(b, i))
+        if (i === headAfter) page.appendChild(headerEl())
       })
       var tail = h('div.tail', { onClick: addAtEnd })
       page.appendChild(tail)
@@ -89,9 +94,26 @@
       renderToc()
     }
 
+    /** The next (or previous) block, over the byline that may stand under the title. */
+    function siblingBlk(el, dir) {
+      var n = el[dir]
+      while (n && !n.classList.contains('blk')) n = n[dir]
+      return n
+    }
+
     function headerEl() {
       var d = ctx.data
-      var by = h('div.by', DX.avatar(d.author || 'Автор', 'person', 20), h('span', (d.author || '') + (d.author ? ' · ' : '') + 'изменён ' + DX.when(d.updatedAt)), h('span', 'версия ' + d.version.n))
+      var versions = d.versions || []
+      var last = versions.length ? versions[versions.length - 1] : null
+      var editor = (last && last.author) || d.author || ''
+      var people = []
+      versions.forEach(function (v) {
+        if (v.author && people.indexOf(v.author) === -1) people.push(v.author)
+      })
+      if (d.author && people.indexOf(d.author) === -1) people.unshift(d.author)
+      var avs = h('span.avs')
+      people.slice(-3).forEach(function (n) { avs.appendChild(DX.avatar(n, /^(агент|agent)$/i.test(n) ? 'agent' : 'person', 20)) })
+      var by = h('div.by', avs, h('span', (editor ? 'Правил ' + editor + ' · ' : 'Изменён ') + DX.when(d.updatedAt)), h('span', 'версия ' + d.version.n))
       var wrap = h('div.doc-head')
       if (showsTitle()) wrap.appendChild(h('div.doc-title', d.title))
       wrap.appendChild(by)
@@ -121,7 +143,7 @@
           DX.renderInline(b.text, body)
           break
         case 'callout':
-          body = h('div.callout', DX.icon('info'), (function () {
+          body = h('div.callout', { 'data-tone': TONES[b.tone] ? b.tone : 'note' }, DX.icon((TONES[b.tone] || TONES.note).icon), (function () {
             var c = bc('div', b)
             DX.renderInline(b.text, c)
             return c
@@ -298,7 +320,7 @@
         }
       } else if (e.key === 'Backspace' && (b.type === 'para' || b.type === 'heading') && !bcOf(blk).textContent && blocks.length > 1) {
         e.preventDefault()
-        var prev = blk.previousElementSibling
+        var prev = siblingBlk(blk, 'previousElementSibling')
         removeBlock(blk)
         var focusEl = prev && prev.classList.contains('blk') ? prev : null
         if (focusEl) focusEnd(bcOf(focusEl))
@@ -306,13 +328,13 @@
         e.preventDefault()
         transform(blk, 'para')
       } else if (e.key === 'ArrowUp' && atEdge(e.target, true)) {
-        var p = blk.previousElementSibling
+        var p = siblingBlk(blk, 'previousElementSibling')
         if (p && p.classList.contains('blk') && bcOf(p)) {
           e.preventDefault()
           focusEnd(bcOf(p))
         }
       } else if (e.key === 'ArrowDown' && atEdge(e.target, false)) {
-        var n = blk.nextElementSibling
+        var n = siblingBlk(blk, 'nextElementSibling')
         if (n && n.classList.contains('blk') && bcOf(n)) {
           e.preventDefault()
           focusEnd(bcOf(n), true)
@@ -569,7 +591,7 @@
     }
 
     function addAfterRule(el) {
-      if (!el.nextElementSibling || !el.nextElementSibling.classList.contains('blk')) insertBlockAfter(el, DX.newBlock('para', { text: '' }), true)
+      if (!siblingBlk(el, 'nextElementSibling')) insertBlockAfter(el, DX.newBlock('para', { text: '' }), true)
     }
 
     function askImage(blk, i) {
@@ -843,12 +865,12 @@
       var span = document.createElement('span')
       var content = range.extractContents()
       content.querySelectorAll('span,font').forEach(function (el) {
-        el.style.removeProperty(prop)
+        DX.unpaint(el, prop)
         if (prop === 'color') el.removeAttribute('color')
         if (el.getAttribute('style') === '') el.removeAttribute('style')
         if (!el.attributes.length) el.replaceWith.apply(el, Array.prototype.slice.call(el.childNodes))
       })
-      span.style.setProperty(prop, value)
+      DX.paint(span, prop === 'color' ? { color: value } : { 'background-color': value })
       span.appendChild(content)
       range.insertNode(span)
       sel.removeAllRanges()
@@ -867,8 +889,8 @@
       if (!root) return
       root.querySelectorAll('span,font').forEach(function (el) {
         if (!range.intersectsNode(el)) return
-        el.style.removeProperty('color')
-        el.style.removeProperty('background-color')
+        DX.unpaint(el, 'color')
+        DX.unpaint(el, 'background-color')
         el.removeAttribute('color')
         if (el.getAttribute('style') === '') el.removeAttribute('style')
         if (!el.attributes.length) el.replaceWith.apply(el, Array.prototype.slice.call(el.childNodes))
@@ -1132,6 +1154,48 @@
           }, 4500)
         }
       }
+    }
+    /** What an agent's turn changed: the blocks that are not in `baseMarkdown` (the text before the turn), as targets. */
+    ctrl.changedSince = function (baseMarkdown) {
+      var base = {}
+      DX.parseMarkdown(baseMarkdown || '').forEach(function (b) { base[b.src] = (base[b.src] || 0) + 1 })
+      var out = []
+      blocks.forEach(function (b) {
+        if (base[b.src]) base[b.src] -= 1
+        else out.push(b.id)
+      })
+      return out
+    }
+    /** How many places those targets are: neighbouring blocks are one place. */
+    ctrl.placesOf = function (targets) {
+      var at = {}
+      targets.forEach(function (id) { at[id] = 1 })
+      var n = 0
+      var inRun = false
+      blocks.forEach(function (b) {
+        if (at[b.id]) {
+          if (!inRun) n += 1
+          inRun = true
+        } else inRun = false
+      })
+      return n
+    }
+    /** The places an agent changed stay lit until the person is done with them (null clears). */
+    ctrl.setMarks = function (targets) {
+      page.querySelectorAll('.blk.agent-mark').forEach(function (el) { el.classList.remove('agent-mark') })
+      ;(targets || []).forEach(function (id) {
+        var el = page.querySelector('.blk[data-id="' + id + '"]')
+        if (el) el.classList.add('agent-mark')
+      })
+    }
+    ctrl.flashTarget = function (id) {
+      var el = page.querySelector('.blk[data-id="' + id + '"]')
+      if (!el) return false
+      scroller.scrollTo({ top: Math.max(0, el.offsetTop - 140), behavior: 'smooth' })
+      el.classList.remove('flash')
+      void el.offsetWidth
+      el.classList.add('flash')
+      return true
     }
     ctrl.renderThreads = renderThreads
     ctrl.refreshHeader = function () {

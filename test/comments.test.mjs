@@ -59,6 +59,16 @@ describe('the agent in the comments', () => {
     assert.equal(twice.isError, true)
   })
 
+  it('gives an HTML page back an address to look at, and a text none', async () => {
+    const page = await app.request('POST', '/api/v1/artifacts', { body: { title: 'Страница', html: '<p>Привет</p>' } })
+    const edited = await mcp(app, 'doc_edit', { slug: page.data.artifact.slug, find: 'Привет', replace: 'Здравствуйте', note: 'Поздоровался вежливее' })
+    assert.ok(!edited.isError, JSON.stringify(edited))
+    assert.match(edited.structuredContent.look.url, new RegExp(page.data.artifact.slug))
+    assert.match(edited.structuredContent.look.how, /picture/)
+    const text = await mcp(app, 'doc_edit', { slug, find: 'Переезжаем', replace: 'Переезжаем все', note: 'Уточнил' })
+    assert.equal(text.structuredContent.look, undefined)
+  })
+
   it('resolves a thread with the reply', async () => {
     const thread = (await mcp(app, 'doc_comment', { slug, text: 'Вопрос по всему документу' })).structuredContent.thread
     const replied = await mcp(app, 'doc_reply', { slug, thread, text: 'Готово', resolve: true })

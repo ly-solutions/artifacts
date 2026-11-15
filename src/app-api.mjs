@@ -67,6 +67,14 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
     // The text of a document usually starts with its own title: the list line shows what follows.
     if (text.toLowerCase().startsWith(item.title.toLowerCase())) text = text.slice(item.title.length).trim()
     const last = item.currentVersion
+    // Who has worked on it: the authors of its versions, the latest last.
+    const people = []
+    for (const v of entry?.meta?.versions ?? []) {
+      const name = typeof v.author === 'string' ? v.author.trim() : ''
+      if (!name) continue
+      if (people.includes(name)) people.splice(people.indexOf(name), 1)
+      people.push(name)
+    }
     return {
       slug: item.slug,
       title: item.title,
@@ -76,6 +84,7 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
       updatedAt: item.updatedAt,
       createdAt: item.createdAt,
       updatedBy: last?.author ?? item.author,
+      people: people.slice(-3),
       versions: item.versionCount,
       url: item.viewUrl,
       kind: entry ? kindOfMeta(entry.meta) : 'html',
