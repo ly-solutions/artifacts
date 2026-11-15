@@ -290,7 +290,8 @@ export function errorPage({ siteName, status, title, message, principal }) {
 export function appViewPage({ siteName }) {
   // The list needs the shell only; a document's editor, comments and chat come with the first document (HRN-1516).
   const scripts = ['util', 'doc', 'app'].map((name) => `<script src="${assetUrl(`docs/${name}.js`)}"></script>`).join('\n')
-  const lazy = JSON.stringify({ doc: ['md', 'text-doc', 'panel', 'html-doc'].map((name) => assetUrl(`docs/${name}.js`)) }).replace(/</g, '\\u003c')
+  // The editor's scripts, named in util.js; the page gives their content versions.
+  const lazy = JSON.stringify(Object.fromEntries(['md', 'text-doc', 'panel', 'html-doc'].map((name) => [name, assetUrl(`docs/${name}.js`).split('?v=')[1]])))
   return `<!doctype html>
 <html lang="ru">
 <head>

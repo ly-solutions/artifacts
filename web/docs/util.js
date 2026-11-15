@@ -41,15 +41,16 @@
   var h = DX.h
 
   /**
-   * Scripts that the first screen does not need, by group (HRN-1516): `<script type="application/json" id="dx-lazy">`
-   * names them with their versioned addresses. `DX.need('doc')` loads a group once, in order, and resolves when it ran.
+   * Scripts that the first screen does not need, by group (HRN-1516). The files are named here; the page gives only
+   * their content versions (`<script type="application/json" id="dx-lazy">`). `DX.need('doc')` loads a group once, in
+   * order, and resolves when it ran.
    */
-  var lazy = null
+  var GROUPS = { doc: ['md', 'text-doc', 'panel', 'html-doc'] }
+  var versions = null
   var loading = {}
   DX.need = function (group) {
     if (loading[group]) return loading[group]
-    // Only our own versioned script addresses, whatever the page's list says.
-    var files = DX.need.files(group).filter(function (src) { return /^\/static\/[\w/.-]+\.js\?v=[\w-]+$/.test(src) })
+    var files = DX.need.files(group)
     loading[group] = Promise.all(files.map(function (src) {
       return new Promise(function (resolve, reject) {
         var s = document.createElement('script')
@@ -66,15 +67,18 @@
     return loading[group]
   }
   DX.need.files = function (group) {
-    if (!lazy) {
+    if (!versions) {
       var tag = document.getElementById('dx-lazy')
       try {
-        lazy = tag ? JSON.parse(tag.textContent) : {}
+        versions = tag ? JSON.parse(tag.textContent) : {}
       } catch (_) {
-        lazy = {}
+        versions = {}
       }
     }
-    return lazy[group] || []
+    return (GROUPS[group] || []).map(function (name) {
+      var v = versions[name]
+      return '/static/docs/' + name + '.js' + (typeof v === 'string' ? '?v=' + encodeURIComponent(v) : '')
+    })
   }
 
   /**

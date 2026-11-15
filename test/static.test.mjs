@@ -33,10 +33,10 @@ describe('static files and compression (HRN-1516)', () => {
     for (const src of scripts) assert.match(src, /^\/static\/[\w/.-]+\.js\?v=[\w-]{12}$/)
     // The list does not carry the editor, the comments or the HTML editor; they are named for later.
     assert.equal(scripts.some((s) => /docs\/(md|text-doc|panel|html-doc)\.js/.test(s)), false)
-    const lazy = JSON.parse(/<script type="application\/json" id="dx-lazy">([^<]*)<\/script>/.exec(page)[1])
-    assert.deepEqual(lazy.doc.map((s) => /docs\/([\w-]+)\.js/.exec(s)[1]), ['md', 'text-doc', 'panel', 'html-doc'])
-    for (const src of lazy.doc) {
-      const res = await rawGet(app.base, src)
+    const versions = JSON.parse(/<script type="application\/json" id="dx-lazy">([^<]*)<\/script>/.exec(page)[1])
+    assert.deepEqual(Object.keys(versions), ['md', 'text-doc', 'panel', 'html-doc'])
+    for (const [name, v] of Object.entries(versions)) {
+      const res = await rawGet(app.base, `/static/docs/${name}.js?v=${v}`)
       assert.equal(res.status, 200)
       assert.equal(res.headers['cache-control'], 'public, max-age=31536000, immutable')
     }
