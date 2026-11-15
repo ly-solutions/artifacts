@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 
 import { titleSimilarity } from '../src/catalog.mjs'
 import { renderMarkdown, renderVersion, renderWidgets } from '../src/render/doc.mjs'
-import { htmlToText, isFullDocument, isValidSlug, makeSlug, normalizeTags, normalizeTitle, slugBase, titleFromHtml, titleFromMarkdown } from '../src/text.mjs'
+import { htmlToText, isFullDocument, isValidSlug, makeSlug, markdownToText, normalizeTags, normalizeTitle, slugBase, titleFromHtml, titleFromMarkdown } from '../src/text.mjs'
 
 describe('slugs', () => {
   it('derives readable slugs, transliterating Cyrillic and Greek and stripping accents', () => {
@@ -87,5 +87,13 @@ describe('text extraction and rendering', () => {
     assert.match(renderWidgets('<artifact-widget type="kpi">{"items":[{"label":"Errors","value":"9","delta":"+4","tone":"bad"}]}</artifact-widget>'), /kpi-delta down/)
     assert.match(html, /<artifact-widget type="x">/)
     assert.match(renderWidgets('<artifact-widget type="kpi">not json</artifact-widget>'), /artifact-widget/)
+  })
+})
+
+describe('what a list line shows of a Markdown text', () => {
+  it('leaves out callout markers and the inline colour tags', () => {
+    const text = markdownToText('# План\n\n> [!NOTE] Ключи в пятницу, <span style="color:#c00">срочно</span> и <u>точно</u>.')
+    assert.doesNotMatch(text, /NOTE|span|style|<u>/)
+    assert.match(text, /Ключи в пятницу, срочно и точно\./)
   })
 })

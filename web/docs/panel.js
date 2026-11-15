@@ -61,11 +61,13 @@
   /** A comment field: text, «@», send. onSend(text) → Promise; the field clears when it resolves. */
   DX.composer = function (opts) {
     var ta = h('textarea', { rows: '1', placeholder: opts.placeholder || 'Написать… «@» — позвать агента', 'aria-label': opts.placeholder || 'Комментарий' })
-    var send = h('button.btn.sm.pri', { type: 'button', disabled: true, onClick: go }, opts.label || 'Отправить')
-    var box = h('div.composer')
+    var send = opts.round
+      ? h('button.send', { type: 'button', disabled: true, 'data-tip': 'Отправить · Enter', 'data-tp': 'dl', 'aria-label': 'Отправить', onClick: go }, DX.icon('arrow-up'))
+      : h('button.btn.sm.pri', { type: 'button', disabled: true, onClick: go }, opts.label || 'Отправить')
+    var box = h('div.composer' + (opts.round ? '.comp' : ''))
     if (opts.chip) box.appendChild(opts.chip)
     box.appendChild(ta)
-    box.appendChild(h('div.row', h('button.ib', { type: 'button', 'data-tip': 'Позвать агента', 'aria-label': 'Позвать агента', style: 'width:28px;height:28px', onClick: function () {
+    box.appendChild(h('div.row', h('button.ib', { type: 'button', 'data-tip': 'Позвать агента', 'data-tp': 'd', 'aria-label': 'Позвать агента', style: 'width:28px;height:28px', onClick: function () {
       ta.value += (ta.value && !/\s$/.test(ta.value) ? ' ' : '') + '@агент '
       ta.focus()
       ta.dispatchEvent(new Event('input'))
@@ -102,6 +104,35 @@
     DX.attachMentions(ta, opts.people || function () { return [] })
     box.focusField = function () { ta.focus() }
     box.field = ta
+    return box
+  }
+
+  /** The one-line reply under a thread: «Ответить…», «@» suggests, the arrow (or Enter) sends. */
+  DX.replyField = function (opts) {
+    var input = h('input', { type: 'text', placeholder: 'Ответить… @ — упомянуть', 'aria-label': 'Ответить' })
+    var send = h('button.ib', { type: 'button', disabled: true, 'data-tip': 'Отправить · Enter', 'data-tp': 'dl', 'aria-label': 'Отправить', style: 'width:26px;height:26px', onClick: go }, DX.icon('arrow-up'))
+    var box = h('div.rep', input, send)
+    function go() {
+      var text = input.value.trim()
+      if (!text || send.disabled) return
+      send.disabled = true
+      Promise.resolve(opts.onSend(text)).then(
+        function () { input.value = '' },
+        function (error) {
+          send.disabled = false
+          DX.toast(error && error.message ? error.message : 'Не получилось отправить')
+        },
+      )
+    }
+    input.addEventListener('input', function () { send.disabled = !input.value.trim() })
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault()
+        go()
+      }
+    })
+    DX.attachMentions(input, opts.people || function () { return [] })
+    box.focusField = function () { input.focus() }
     return box
   }
 
@@ -156,18 +187,12 @@
       return tab
     }
 
-    function counts() {
-      var open = ctx.threads().filter(function (t) { return t.status === 'open' }).length
-      return open
-    }
-
     ctrl.render = function () {
       if (!el) return
       var keepScroll = el.querySelector('.rp-b') ? el.querySelector('.rp-b').scrollTop : 0
       el.textContent = ''
-      var open = counts()
-      var seg = h('div.seg.sm', { role: 'tablist' },
-        h('button', { type: 'button', role: 'tab', 'data-on': String(tab === 'comments'), onClick: function () { tab = 'comments'; ctrl.render() } }, 'Комментарии' + (open ? ' · ' + open : '')),
+      var seg = h('div.seg', { role: 'tablist' },
+        h('button', { type: 'button', role: 'tab', 'data-on': String(tab === 'comments'), onClick: function () { tab = 'comments'; ctrl.render() } }, 'Комментарии'),
         h('button', { type: 'button', role: 'tab', 'data-on': String(tab === 'chat'), onClick: function () { tab = 'chat'; ctrl.render() } }, 'Чат'),
       )
       el.appendChild(h('div.rp-h', seg, DX.ib('x', 'Закрыть', ctrl.close, { tp: 'dl' })))
@@ -189,15 +214,16 @@
     }
 
     function commentsTab() {
-      var filters = h('div.filters')
+      var filters = h('div.seg.sm.pfil', { role: 'tablist' })
       ;[['open', 'Открытые'], ['resolved', 'Решённые'], ['mine', 'Мне']].forEach(function (f) {
-        filters.appendChild(h('button.chip', { type: 'button', 'data-on': String(filter === f[0]), onClick: function () { filter = f[0]; ctrl.render() } }, f[1]))
+        filters.appendChild(h('button', { type: 'button', role: 'tab', 'data-on': String(filter === f[0]), onClick: function () { filter = f[0]; ctrl.render() } }, f[1]))
       })
-      el.appendChild(filters)
+      el.appendChild(h('div.pfil-w', filters))
       var body = h('div.rp-b')
       var list = visible()
       if (!list.length) {
-        body.appendChild(h('div.hint', h('b', filter === 'resolved' ? 'Решённых нет' : 'Пока ни одного комментария'), ctx.canComment() ? 'Выделите слова в тексте и нажмите «Комментарий». Чтобы позвать агента, напишите @агент.' : 'Комментировать этот документ может только тот, кому дали такое право.'))
+        var empty = { open: ['Пока ни одного комментария', ctx.canComment() ? 'Выделите слова в тексте и нажмите «Комментарий». Чтобы позвать агента, напишите @агент.' : ''], resolved: ['Решённых нет', 'Здесь будут обсуждения, которые вы закрыли.'], mine: ['Для вас ничего нет', 'Сюда попадают треды, где вы писали или где вас упомянули.'] }[filter]
+        body.appendChild(h('div.hint', h('b', empty[0]), empty[1]))
       }
       list.forEach(function (t) {
         body.appendChild(threadCard(t))
@@ -208,103 +234,120 @@
     function anchorLabel(t) {
       if (t.anchor.kind === 'text') return t.anchor.quote
       if (t.anchor.kind === 'element') return t.anchor.label + (t.anchor.text ? ' · ' + t.anchor.text : '')
-      return ''
+      return 'Весь документ'
     }
 
     function threadCard(t) {
       var on = ctx.activeThread() === t.id
-      var card = h('div.thread', { 'data-id': t.id, 'data-on': String(on), 'data-resolved': t.status === 'resolved' ? '1' : '0', onClick: function (e) {
-        if (e.target.closest('button, textarea, a')) return
+      var open = t.status === 'open'
+      var card = h('div.thread', { 'data-id': t.id, 'data-on': String(on), 'data-resolved': open ? '0' : '1', onClick: function (e) {
+        if (e.target.closest('button, textarea, input, a')) return
         ctx.openThread(t.id)
       } })
       var label = anchorLabel(t)
-      if (label) card.appendChild(h('span.quote', label))
-      t.messages.forEach(function (m) {
-        card.appendChild(messageRow(t, m))
+      var quoteIcon = t.anchor.kind === 'element' ? 'square-mouse-pointer' : t.anchor.kind === 'doc' ? 'file-text' : 'text-quote'
+      card.appendChild(h('button.tq', { type: 'button', 'data-tip': 'Показать в документе', 'data-tp': 'd', onClick: function () { ctx.openThread(t.id) } }, DX.icon(quoteIcon), h('span', label)))
+      t.messages.forEach(function (m, i) {
+        card.appendChild(messageRow(t, m, i === 0))
       })
-      if (ctx.pendingAgent(t.id)) card.appendChild(h('div.typing', DX.avatar('Агент', 'agent', 20), h('span', 'Агент печатает'), h('span', h('i'), h('i'), h('i'))))
-      var act = h('div.thread-act')
-      if (ctx.canComment()) {
-        act.appendChild(h('button.btn.sm.ghost', { type: 'button', onClick: function () { ctx.setStatus(t.id, t.status === 'open' ? 'resolved' : 'open') } }, DX.icon('circle-check'), h('span', t.status === 'open' ? 'Решено' : 'Открыть снова')))
-        act.appendChild(h('span', { style: 'flex:1' }))
-        act.appendChild(DX.ib('trash-2', 'Удалить тред', function (e) { e.stopPropagation(); ctx.removeThread(t) }, { tp: 'd' }))
-      }
-      card.appendChild(act)
-      if (ctx.canComment() && t.status === 'open') {
-        var comp = composers[t.id] || (composers[t.id] = DX.composer({ placeholder: 'Ответить…', label: 'Ответить', people: peopleNames, onSend: function (text) { return ctx.reply(t.id, text) } }))
+      if (ctx.pendingAgent(t.id)) card.appendChild(h('div.typing', h('span.orb'), h('span', 'агент печатает'), h('b', h('i'), h('i'), h('i'))))
+      var last = t.messages[t.messages.length - 1]
+      if (ctx.canComment() && last) card.appendChild(h('div.rx.add', reactionButton(t, last)))
+      if (ctx.canComment() && open) {
+        var comp = composers[t.id] || (composers[t.id] = DX.replyField({ people: peopleNames, onSend: function (text) { return ctx.reply(t.id, text) } }))
         card.appendChild(comp)
       }
       return card
     }
 
-    function messageRow(t, m) {
-      var txt = h('div.txt')
+    function reactionButton(t, m) {
+      return h('button.ib', { type: 'button', 'data-tip': 'Реакция', 'data-tp': 'd', 'aria-label': 'Реакция', onClick: function (e) {
+        DX.popover(e.currentTarget, function (close) {
+          var box = h('div', { style: 'display:flex;gap:2px' })
+          ;['👍', '❤️', '🎉', '👀', '✅'].forEach(function (emoji) {
+            box.appendChild(h('button.ib', { type: 'button', onClick: function () { close(); ctx.react(t.id, m.id, emoji) } }, emoji))
+          })
+          return box
+        }, { side: 'above' })
+      } }, DX.icon('smile-plus'))
+    }
+
+    function messageRow(t, m, first) {
+      var txt = h('p')
       DX.textWithMentions(m.text, txt)
-      var row = h('div.msg', DX.avatar(m.author.name, m.author.kind, 28), h('div.body', h('div.who', h('span', m.author.name), h('em', DX.ago(m.at))), txt))
-      var body = row.querySelector('.body')
-      var rx = h('div.rx')
-      Object.keys(m.reactions || {}).forEach(function (emoji) {
-        var who = m.reactions[emoji]
-        rx.appendChild(h('button', { type: 'button', 'data-on': String(who.indexOf(ctx.me()) !== -1), 'data-tip': who.join(', '), onClick: function () { ctx.react(t.id, m.id, emoji) } }, emoji + ' ' + who.length))
-      })
-      if (ctx.canComment()) {
-        rx.appendChild(h('button', { type: 'button', 'data-tip': 'Реакция', 'aria-label': 'Реакция', onClick: function (e) {
-          DX.popover(e.currentTarget, function (close) {
-            var box = h('div', { style: 'display:flex;gap:2px' })
-            ;['👍', '❤️', '🎉', '👀', '✅'].forEach(function (emoji) {
-              box.appendChild(h('button.ib', { type: 'button', onClick: function () { close(); ctx.react(t.id, m.id, emoji) } }, emoji))
-            })
-            return box
-          }, { side: 'above' })
-        } }, DX.icon('smile-plus')))
+      var who = h('div.who', h('span.nm', m.author.name), h('em', DX.ago(m.at)))
+      if (first && ctx.canComment()) {
+        var open = t.status === 'open'
+        who.appendChild(DX.ib(open ? 'circle-check' : 'rotate-ccw', open ? 'Решено' : 'Открыть снова', function (e) { e.stopPropagation(); ctx.setStatus(t.id, open ? 'resolved' : 'open') }, { tp: 'dl' }))
       }
-      body.appendChild(rx)
+      var body = h('div.body', who, txt)
+      var row = h('div.msg', DX.avatar(m.author.name, m.author.kind, 22), body)
+      var reacted = Object.keys(m.reactions || {})
+      if (reacted.length) {
+        var rx = h('div.rx')
+        reacted.forEach(function (emoji) {
+          var people = m.reactions[emoji]
+          rx.appendChild(h('button', { type: 'button', 'data-me': String(people.indexOf(ctx.me()) !== -1), 'data-tip': people.join(', '), 'data-tp': 'd', onClick: function () { ctx.react(t.id, m.id, emoji) } }, emoji + ' ' + people.length))
+        })
+        body.appendChild(rx)
+      }
       var edit = m.edit && (t.edits || []).filter(function (x) { return x.id === m.edit })[0]
-      if (edit) body.appendChild(editCard(t, edit))
+      if (edit) body.appendChild(editChips(t, edit))
       return row
     }
 
-    function editCard(t, edit) {
-      var card = h('div.editcard', h('div', { style: 'font-weight:600;margin-bottom:4px' }, edit.undone ? 'Правка отменена' : 'Агент поправил текст'), h('del', clip(edit.before)), h('ins', clip(edit.after)))
-      var row = h('div.row')
-      row.appendChild(h('button.btn.sm.soft', { type: 'button', onClick: function () { ctx.showEdit(edit) } }, DX.icon('eye'), h('span', 'Показать в документе')))
-      if (!edit.undone && ctx.canWrite()) row.appendChild(h('button.btn.sm.ghost', { type: 'button', onClick: function () { ctx.undoEdit(t, edit) } }, DX.icon('undo-2'), h('span', 'Отменить')))
-      card.appendChild(row)
-      return card
-    }
-    function clip(s) {
-      s = String(s)
-      return s.length > 240 ? s.slice(0, 240) + '…' : s
+    /** «Показать в документе» · «Отменить» (or «Отменено») under an agent's answer that changed the text. */
+    function editChips(t, edit) {
+      var row = h('div.chips')
+      row.appendChild(h('button.chipl', { type: 'button', onClick: function () { ctx.showEdit(edit) } }, DX.icon('locate'), 'Показать в документе'))
+      if (edit.undone) row.appendChild(h('span.chipl', { 'data-off': 'true' }, DX.icon('check'), 'Отменено'))
+      else if (ctx.canWrite()) row.appendChild(h('button.chipl', { type: 'button', onClick: function () { ctx.undoEdit(t, edit) } }, DX.icon('rotate-ccw'), 'Отменить'))
+      return row
     }
 
     // ---- Chat ----
 
     var chatComposer = null
     function chatTab() {
-      var body = h('div.rp-b')
-      body.appendChild(h('div.hint', h('b', 'Спросите агента про документ'), 'Вопрос уйдёт в чат harnessly вместе с выделенным фрагментом. Ответ будет там; всё, что агент поправит в документе, появится здесь.'))
-      var asked = ctx.asked()
-      asked.slice(-6).forEach(function (a) {
-        body.appendChild(h('div.msg', DX.avatar(ctx.me(), 'person', 28), h('div.body', h('div.who', h('span', ctx.me()), h('em', DX.ago(a.at))), h('div.txt', a.text))))
-        body.appendChild(h('div.typing', { style: 'padding-left:36px' }, h('span', 'отправлено в чат harnessly')))
+      var body = h('div.rp-b.chat')
+      var items = []
+      ctx.asked().slice(-8).forEach(function (a) { items.push({ at: Date.parse(a.at) || 0, ask: a }) })
+      ctx.turns().slice(-6).forEach(function (t) { items.push({ at: t.last, turn: t }) })
+      items.sort(function (a, b) { return a.at - b.at })
+      if (!items.length) body.appendChild(h('div.hint', h('b', 'Чат документа'), 'Спросите про текст или попросите поправить: вопрос уйдёт агенту в чат harnessly, а его правки в документе появятся здесь.'))
+      items.forEach(function (it) {
+        if (it.ask) {
+          body.appendChild(h('div.um', it.ask.quote ? h('div.qq', DX.icon('text-quote'), h('span', '«' + it.ask.quote + '»')) : null, it.ask.text))
+          body.appendChild(h('div.step', DX.icon('send'), 'отправлено в чат harnessly'))
+        } else body.appendChild(turnMessage(it.turn))
       })
-      var edits = []
-      ctx.threads().forEach(function (t) {
-        ;(t.edits || []).forEach(function (e) { edits.push({ t: t, e: e }) })
-      })
-      edits.sort(function (a, b) { return a.e.at < b.e.at ? 1 : -1 }).slice(0, 6).forEach(function (x) {
-        var card = editCard(x.t, x.e)
-        card.style.margin = '0'
-        body.appendChild(card)
-      })
+      if (ctx.chatBusy()) body.appendChild(h('div.typing', h('span.orb'), h('span', 'агент печатает'), h('b', h('i'), h('i'), h('i'))))
       el.appendChild(body)
+      body.scrollTop = body.scrollHeight
       var foot = h('div.rp-f')
       var sel = ctx.chip()
       var chip = null
-      if (sel) chip = h('div.selchip', DX.icon('text-quote'), h('span', sel), h('button', { type: 'button', 'aria-label': 'Убрать фрагмент', onClick: function () { ctx.dropChip(); ctrl.render() } }, DX.icon('x')))
-      chatComposer = DX.composer({ placeholder: 'Спросите про документ или попросите поправить…', label: 'Спросить', chip: chip, people: peopleNames, onSend: function (text) { return ctx.ask2(text) } })
+      if (sel) chip = h('div.ctxc', h('span', DX.icon('text-quote'), h('em', '«' + sel + '»'), h('button.x', { type: 'button', 'aria-label': 'Убрать фрагмент', 'data-tip': 'Убрать фрагмент', 'data-tp': 'dl', onClick: function () { ctx.dropChip(); ctrl.render() } }, DX.icon('x'))))
+      chatComposer = DX.composer({ placeholder: 'Спросите или попросите поправить документ', chip: chip, round: true, people: peopleNames, onSend: function (text) { return ctx.ask2(text) } })
       foot.appendChild(chatComposer)
       el.appendChild(foot)
+    }
+
+    /** One agent's turn in the chat: what it did, in a line, with the two chips. */
+    function turnMessage(t) {
+      var stepText = h('span', t.places ? ctx.placesLabel(t.places) : ctx.placesLabel(0))
+      var when = h('em', ' · ' + DX.ago(new Date(t.last).toISOString()))
+      var msg = h('div.am', h('div.step', DX.icon('check'), stepText, when))
+      msg.appendChild(h('p', t.notes.length ? t.notes.join(' · ') : t.undone ? 'Правка отменена.' : 'Поправил документ.'))
+      var chips = h('div.chips')
+      chips.appendChild(h('button.chipl', { type: 'button', onClick: function () { ctx.showTurn(t) } }, DX.icon('locate'), 'Показать в документе'))
+      if (t.undone) chips.appendChild(h('span.chipl', { 'data-off': 'true' }, DX.icon('check'), 'Отменено'))
+      else if (t.latest && ctx.canWrite()) chips.appendChild(h('button.chipl', { type: 'button', onClick: function () { ctx.undoTurn(t) } }, DX.icon('rotate-ccw'), 'Отменить'))
+      msg.appendChild(chips)
+      if (!t.places && t.latest) {
+        ctx.turnPlaces(t).then(function (n) { if (n) stepText.textContent = ctx.placesLabel(n) })
+      }
+      return msg
     }
 
     ctrl.focusChat = function () {

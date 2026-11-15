@@ -270,7 +270,7 @@
         if (closeAt > -1) {
           flush()
           var mark = document.createElement(tagName)
-          if (css) Object.keys(css).forEach(function (prop) { mark.style.setProperty(prop, css[prop]) })
+          if (css) DX.paint(mark, css)
           DX.renderInline(s.slice(i + open[0].length, closeAt), mark)
           parent.appendChild(mark)
           i = closeAt + tagName.length + 3
@@ -357,6 +357,25 @@
   var COLOR_KEYWORD_NO = /^(inherit|initial|unset|revert|currentcolor)$/i
 
   /** A colour the page may paint with, or null. */
+  /**
+   * Sets the colours of a span as they were written and, beside them, as custom properties the stylesheet reads: on a
+   * dark page a dark text colour or a bright marker is brought to a level that reads there (the file keeps what was written).
+   */
+  DX.paint = function (el, css) {
+    if (css.color) {
+      el.style.setProperty('color', css.color)
+      el.style.setProperty('--dx-tc', css.color)
+    }
+    if (css['background-color']) {
+      el.style.setProperty('background-color', css['background-color'])
+      el.style.setProperty('--dx-bc', css['background-color'])
+    }
+  }
+  DX.unpaint = function (el, prop) {
+    el.style.removeProperty(prop)
+    el.style.removeProperty(prop === 'color' ? '--dx-tc' : '--dx-bc')
+  }
+
   DX.safeColor = function (value) {
     var v = String(value || '').trim()
     if (!COLOR.test(v) || COLOR_KEYWORD_NO.test(v)) return null

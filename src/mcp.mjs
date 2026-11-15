@@ -138,7 +138,7 @@ export const TOOLS = [
     name: 'doc_edit',
     title: 'Change a fragment of a document',
     description:
-      'Replace one fragment of the current version with other text: a new version of the same document, the change is highlighted for the person and they can undo it. `find` must occur exactly once in the source (Markdown, or the HTML of a page), so quote enough words. With thread, the change and your reply are recorded in that thread. Needs the right to edit. For a whole new text publish through the hub instead.',
+      'Replace one fragment of the current version with other text: a new version of the same document, the change is highlighted for the person and they can undo it. `find` must occur exactly once in the source (Markdown, or the HTML of a page), so quote enough words. With thread, the change and your reply are recorded in that thread. `note` is the one short line the person reads next to the change in the document chat (what you changed and why); one turn of several doc_edit calls is shown to them as one change they can undo at once. For an HTML page look at it before and after the change (the result gives the address to open in your browser and take a picture of) and undo your own change if the page broke. Needs the right to edit. For a whole new text publish through the hub instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -323,14 +323,23 @@ export function createMcpHandler({ config, service, comments, searchFor, docAcce
       const next = replaceOnce(source, args.find, args.replace)
       const publish = { slug, author: 'Агент', baseVersion: content.n, note: typeof args.note === 'string' ? args.note.slice(0, 200).replace(/[\r\n]+/g, ' ') : 'Правка агента' }
       if (kind === 'text') publish.markdown = next
-      else publish.html = next
+      else {
+        publish.html = next
+        // A page with no <title> or heading of its own keeps the title it has.
+        publish.title = meta.title
+      }
       const result = await service.publish(publish, { name: 'Агент', role: 'editor', via: 'bearer' })
       let edit = null
       if (typeof args.thread === 'string') {
         const { result: made } = await comments.reply(slug, args.thread, { text: args.reply, author: { name: 'Агент', kind: 'agent' }, edit: { from: content.n, to: result.version.n, before: args.find, after: args.replace } })
         edit = made.message.edit ?? null
       }
-      return { slug, version: result.version.n, edit }
+      const out = { slug, version: result.version.n, edit }
+      if (kind === 'html') {
+        // The service draws no pictures: the agent looks at the page itself, before and after, in the browser it has.
+        out.look = { url: service.present(meta).viewUrl, how: 'Open this address in your browser, take a picture of the page and compare it with the one from before the change; if the page broke, put the old fragment back with doc_edit.' }
+      }
+      return out
     },
 
     async doc_share(principal, args) {

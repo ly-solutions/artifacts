@@ -76,6 +76,7 @@
       '#dx-overlay .dx-label{position:absolute;display:none;height:20px;padding:0 7px;align-items:center;border-radius:6px 6px 6px 0;background:#7b61ff;color:#fff;white-space:nowrap}' +
       '#dx-overlay .dx-pin{position:absolute;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50% 50% 50% 4px;background:#f6d860;color:#3b3200;display:grid;place-items:center;font:700 11px/1 system-ui,sans-serif;box-shadow:0 4px 10px -2px rgba(0,0,0,.4);pointer-events:auto;cursor:pointer}' +
       '#dx-overlay .dx-pin[data-resolved="1"]{opacity:.45}' +
+      '.dx-agent-mark{outline:2px solid rgba(123,97,255,.65) !important;outline-offset:3px;border-radius:4px}' +
       '[data-dx-editing="1"]{outline:2px solid #7b61ff !important;outline-offset:3px;cursor:text}' +
       '.dx-flash{animation:dx-flash 1.8s ease-out}@keyframes dx-flash{0%,55%{background-color:rgba(123,97,255,.28)!important;box-shadow:0 0 0 6px rgba(123,97,255,.28)}100%{box-shadow:0 0 0 0 transparent}}'
     ;(document.head || document.documentElement).appendChild(style)
@@ -399,6 +400,13 @@
           f.classList.remove('dx-flash')
         }, 2000)
       }
+    } else if (m.t === 'marks') {
+      // The places an agent changed: outlined until the person is done with them (an empty list clears).
+      document.querySelectorAll('.dx-agent-mark').forEach(function (n) { n.classList.remove('dx-agent-mark') })
+      ;(Array.isArray(m.paths) ? m.paths : []).forEach(function (path) {
+        var n = byPath(path)
+        if (n) n.classList.add('dx-agent-mark')
+      })
     } else if (m.t === 'scroll') {
       window.scrollTo({ top: Number(m.y) || 0, behavior: 'smooth' })
     }

@@ -33,7 +33,7 @@ For a hub person, `doc_find` looks among the best 2000 matches of the query; nar
 | `doc_comments` | `slug`, `status` (`open` default, `resolved`, `all`), `thread` | `threads`: id, status, `anchor` (the quoted words or the page element), `messages` (author, text, `by` person or agent) |
 | `doc_reply` | `slug`, `thread`, `text`, `resolve` | answers a thread as the agent (and closes it with `resolve: true`) |
 | `doc_comment` | `slug`, `text`, `quote` | starts a thread, on the quoted words or on the document |
-| `doc_edit` | `slug`, `find`, `replace`, `thread`, `reply`, `note` | replaces one fragment (it must occur exactly once in the Markdown or the HTML): a new version of the same document; the person sees it highlighted and can undo it. With `thread` the change and `reply` go into that thread. Needs the right to edit |
+| `doc_edit` | `slug`, `find`, `replace`, `thread`, `reply`, `note` | replaces one fragment (it must occur exactly once in the Markdown or the HTML): a new version of the same document; the person sees it highlighted and can undo it. With `thread` the change and `reply` go into that thread. Needs the right to edit For an HTML page the result also has `look.url`: the address to open in a browser and take a picture of before and after the change. Edits made within three minutes of each other are one turn: the person sees one bar «Агент изменил N раздела» and undoes the whole turn at once. |
 | `doc_share` | `slug`, `public` (default `true`), `expiresIn` (`7d`, `12h`…) | `url` and `expiresAt` of a share link, or `public: false` after closing every link; needs the right to edit |
 
 A document the caller may not read and a missing one give the same tool error. When the hub does not answer the

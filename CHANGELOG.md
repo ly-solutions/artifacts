@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The agent's edits are shown as one turn: the changed places stay lit, a bar says «Агент изменил N раздела · Показать ·
+  Отменить», one «Отменить» returns the document to how it was before the turn (several `doc_edit` within three minutes
+  are one turn). The same line, with the agent's one-line `note` and the chips «Показать в документе» / «Отменить»,
+  is in the chat of the document. In an HTML page the changed elements are outlined in the frame.
+- `doc_edit` on an HTML page answers with `look.url`: the address to open and take a picture of before and after.
+- Comment threads in the new look: the quoted words on top, the resolve tick in the first message, reactions, a one-line
+  reply with «@», the agent's answers with «Показать в документе» / «Отменить»; «Открытые · Решённые · Мне» as a segment.
+- The chat of the document: the person's questions as bubbles, the agent's turns, «агент печатает» while it works.
+- Callouts take the colour of their kind (`note`, `tip`, `important`, `warning`, `caution`) and keep it on a dark page;
+  the colours of words follow the theme (the file keeps what was written).
+- A document's byline sits under its title: who has worked on it, who changed it last, when.
+- The list shows who has worked on each document and a `⌘K` hint on the search.
+
+### Fixed
+
+- A list line no longer shows callout markers or colour tags; the `<style>` of an HTML page no longer makes a console
+  error when the page is opened for editing.
+
+### Added
+
 - In a harnessly installation a person makes, copies, renames and trashes documents from the list and from the open
   document: the requests go to the hub (`/api/platform/docs`) as that person, with the documents' access token and the
   person's own app token (`X-Harnessly-Token`, kept in the session at sign-in, never given to the page). A trash is

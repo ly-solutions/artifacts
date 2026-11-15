@@ -26,6 +26,10 @@
     var saving = null
     var conflict = false
     var bannerEl = null
+    var turn = null // the agent's turn on this screen: {base, baseContent, to, at, targets, places, closed}
+    var lastContent = ''
+    var agentBar = null
+    var turnCache = {}
     var pref = { w: DX.pref.get('width', 'normal'), f: DX.pref.get('font', 'sans') }
 
     // ---- Loading ----
@@ -48,7 +52,9 @@
         threads = (res[1] && res[1].threads) || []
         rev = (res[1] && res[1].rev) || 0
         seenVersion = data.version.n
+        lastContent = contentOf(data)
         build()
+        resumeTurn()
         if (shell.wantEdit && shell.wantEdit() && ctx.canWrite()) setMode('edit')
         if (data.kind === 'html') window.addEventListener('message', onFrameMessage)
         schedulePoll()
@@ -65,6 +71,14 @@
     ctx.activeThread = function () { return active }
     ctx.pendingAgent = function (id) { return !!pending[id] }
     ctx.asked = function () { return asked }
+    /** The agent was asked a moment ago and has not changed anything since: «печатает» in the chat. */
+    ctx.chatBusy = function () {
+      var a = asked[asked.length - 1]
+      if (!a) return false
+      var at = Date.parse(a.at)
+      if (Date.now() - at > 90000) return false
+      return !ctx.turns().some(function (t) { return t.last > at })
+    }
     ctx.chip = function () { return chipText }
     ctx.dropChip = function () { chipText = ''; if (ctrl) ctrl.clearSelection() }
     ctx.layout = function () {
@@ -119,6 +133,7 @@
         chipText = ''
         if (ctrl) ctrl.clearSelection()
         panel.render()
+        setTimeout(function () { if (!dead && panel.isOpen()) panel.render() }, 91000)
       })
     }
 
@@ -230,6 +245,7 @@
         if (ctrl) ctrl.renderThreads()
         panel.render()
         drawRight()
+        DX.toast(st === 'resolved' ? 'Комментарий решён' : 'Комментарий снова открыт', st === 'resolved' ? { label: 'Вернуть', run: function () { ctx.setStatus(id, 'open') } } : null)
       }, function (e) { DX.toast(e.message) })
     }
     ctx.react = function (id, message, emoji) {
@@ -254,6 +270,156 @@
         seenVersion = res.version
         return refreshDoc(true).then(function () { return fromServer() }).then(function () { DX.toast('Правка агента отменена') })
       }, function (e) { DX.toast(e.message) })
+    }
+
+    // ---- The agent's turn: what it changed is lit, one bar says so, one «Отменить» takes the whole turn back ----
+
+    var TURN_GAP = 3 * 60 * 1000
+    var FRESH_TURN = 5 * 60 * 1000
+    var isAgentVersion = function (v) { return /^(агент|agent)$/i.test(String(v.author || '').trim()) }
+    var contentOf = function (data) { return data.kind === 'text' ? data.markdown || '' : data.html || '' }
+
+    /** The turns the history shows: runs of versions the agent made close in time, the person's own versions between. */
+    function turnsOf(versions) {
+      var out = []
+      var cur = null
+      versions.slice().sort(function (a, b) { return a.n - b.n }).forEach(function (v) {
+        if (!isAgentVersion(v)) {
+          cur = null
+          return
+        }
+        var at = Date.parse(v.createdAt) || 0
+        if (cur && at - cur.last <= TURN_GAP) {
+          cur.to = v.n
+          cur.last = at
+          if (v.note && !/^Правка агента$/.test(v.note)) cur.notes.push(v.note)
+        } else {
+          cur = { base: v.n - 1, from: v.n, to: v.n, at: at, last: at, notes: v.note && !/^Правка агента$/.test(v.note) ? [v.note] : [] }
+          out.push(cur)
+        }
+      })
+      var all = versions
+      out.forEach(function (t) {
+        t.undone = all.some(function (v) { return v.n > t.to && v.note === 'Возврат к версии ' + t.base })
+        t.latest = t.to === ctx.data.version.of
+        t.places = turnCache[t.base + ':' + t.to] || null
+      })
+      return out
+    }
+    ctx.turns = function () { return turnsOf(ctx.data.versions || []) }
+    ctx.currentTurn = function () { return turn }
+
+    function plural(n, one, few, many) {
+      var m = n % 100
+      var d = n % 10
+      return m > 10 && m < 15 ? many : d === 1 ? one : d >= 2 && d <= 4 ? few : many
+    }
+    ctx.placesLabel = function (n) {
+      return n > 0 ? 'Изменил ' + n + ' ' + plural(n, 'раздел', 'раздела', 'разделов') : 'Изменил документ'
+    }
+
+    /** Lights what differs from `baseContent` and says how many places that is (0 when it can not be told). */
+    function lightChanges(baseContent) {
+      if (!ctrl || !ctrl.changedSince || !ctx.canWrite() || ctx.data.kind !== 'text' && !ctx.data.html) return { targets: [], places: 0 }
+      var targets = ctrl.changedSince(baseContent)
+      ctrl.setMarks(targets)
+      return { targets: targets, places: ctrl.placesOf(targets) }
+    }
+
+    function startTurn(base, baseContent, to) {
+      var lit = lightChanges(baseContent)
+      turn = { base: base, baseContent: baseContent, to: to, at: Date.now(), targets: lit.targets, places: lit.places, closed: false, at0: 0, shown: -1 }
+      drawAgentBar()
+    }
+
+    /** The person has the turn in hand (typed, closed the bar, undid it): the marks go away. */
+    function endTurn() {
+      if (!turn) return
+      turn = null
+      if (ctrl && ctrl.setMarks) ctrl.setMarks(null)
+      drawAgentBar()
+    }
+
+    function drawAgentBar() {
+      var want = turn && !turn.closed ? turn : null
+      if (agentBar && (!want || agentBar.dataset.base !== String(want.base))) {
+        var gone = agentBar
+        agentBar = null
+        gone.dataset.ph = 'closing'
+        setTimeout(function () { gone.remove() }, 200)
+      }
+      if (!want || !doc) return
+      var label = ctx.placesLabel(want.places)
+      if (agentBar) {
+        agentBar.querySelector('.msg-t').textContent = 'Агент ' + label.toLowerCase()
+        return
+      }
+      agentBar = h('div.agentbar', { role: 'status', 'data-base': String(want.base) },
+        h('span.orb'),
+        h('span.msg-t', 'Агент ' + label.toLowerCase()),
+        want.targets.length ? h('button.btn.sm.soft', { type: 'button', onClick: function () { ctx.showTurnPlace(want) } }, DX.icon('locate'), h('span', 'Показать')) : null,
+        ctx.canWrite() ? h('button.btn.sm.ghost', { type: 'button', onClick: function () { undoTurn(want.base) } }, DX.icon('rotate-ccw'), h('span', 'Отменить')) : null,
+        DX.ib('x', 'Закрыть', function () { want.closed = true; if (ctrl.setMarks) ctrl.setMarks(null); drawAgentBar() }, { tp: 'd' }))
+      doc.appendChild(agentBar)
+    }
+
+    /** «Показать»: the next changed place, scrolled to and flashed. */
+    ctx.showTurnPlace = function (t) {
+      var list = t.targets || []
+      if (!list.length) return
+      t.shown = (t.shown + 1) % list.length
+      // Neighbouring blocks are one place: step over the ones next to the one just shown.
+      ctrl.flashTarget(list[t.shown])
+    }
+
+    /** A turn of the history, from the chat: shows where it changed (lighting it only for a moment when it is not the live one). */
+    ctx.showTurn = function (t) {
+      if (turn && turn.base === t.base && !turn.closed) return ctx.showTurnPlace(turn)
+      fetchContent(t.base).then(function (base) {
+        if (dead || base === null) return
+        var targets = ctrl.changedSince ? ctrl.changedSince(base) : []
+        if (!targets.length) return DX.toast('Это место теперь выглядит иначе — откройте историю версий')
+        ctrl.flashTarget(targets[0])
+      })
+    }
+    ctx.undoTurn = function (t) { undoTurn(t.base) }
+    /** How many places the latest turn changed: asked of the server once (the page may open after the agent did it). */
+    ctx.turnPlaces = function (t) {
+      var key = t.base + ':' + t.to
+      if (turnCache[key] !== undefined) return Promise.resolve(turnCache[key])
+      if (!t.latest || !ctrl.changedSince || !ctx.canWrite()) return Promise.resolve(null)
+      return fetchContent(t.base).then(function (base) {
+        if (base === null) return null
+        var n = ctrl.placesOf(ctrl.changedSince(base))
+        turnCache[key] = n
+        return n
+      })
+    }
+
+    function fetchContent(n) {
+      if (n < 1) return Promise.resolve(null)
+      return DX.fetchJson('/app/doc?slug=' + encodeURIComponent(slug) + '&v=' + n + '&theme=' + shell.theme()).then(function (d) {
+        if (!d || d.__unauthorized || d.error) return null
+        return d.kind === 'text' ? d.markdown || '' : typeof d.html === 'string' ? d.html : null
+      }, function () { return null })
+    }
+
+    function undoTurn(base) {
+      post('/app/restore', { version: base }).then(function (res) {
+        seenVersion = res.version
+        endTurn()
+        return refreshDoc(false).then(function () { DX.toast('Правка агента отменена') })
+      }, function (e) { DX.toast(e.message) })
+    }
+
+    /** The page opened just after an agent edited it: the same bar, from the history. */
+    function resumeTurn() {
+      var latest = ctx.turns().filter(function (t) { return t.latest && !t.undone })[0]
+      if (!latest || Date.now() - latest.last > FRESH_TURN || !ctx.canWrite()) return
+      fetchContent(latest.base).then(function (base) {
+        if (dead || base === null || turn) return
+        startTurn(latest.base, base, latest.to)
+      })
     }
 
     // ---- Building the screen ----
@@ -409,7 +575,7 @@
         ctx.data.versions.forEach(function (v) {
           var current = v.n === ctx.data.version.of
           box.appendChild(h('button.mi.tall', { type: 'button', onClick: function () { close(); shell.navigate(slug, current ? null : v.n) } },
-            DX.avatar(v.author || 'Автор', 'person', 20),
+            DX.avatar(v.author || 'Автор', isAgentVersion(v) ? 'agent' : 'person', 20),
             h('span.tx', h('span', 'Версия ' + v.n + (current ? ' · текущая' : '')), h('em', (v.author || '') + (v.author ? ' · ' : '') + DX.when(v.createdAt) + (v.note ? ' · ' + v.note : '')))))
         })
         return box
@@ -475,6 +641,7 @@
     }
 
     function onChange() {
+      endTurn()
       setStatus('dirty')
       clearTimeout(timers.save)
       timers.save = setTimeout(save, SAVE_MS)
@@ -513,6 +680,7 @@
           ctx.data.version.of = res.version
           seenVersion = res.version
           ctrl.markSaved(atRev)
+          lastContent = snapshot
           conflict = false
           drawBanner()
           setStatus(ctrl.dirty() ? 'dirty' : 'saved')
@@ -558,10 +726,15 @@
     // ---- Keeping up ----
 
     function refreshDoc(flash) {
+      var prevN = seenVersion
+      var prevContent = lastContent
       return load().then(function (data) {
         if (!data || dead) return
+        var fresh = (data.versions || []).filter(function (v) { return v.n > prevN })
+        var byAgent = flash && fresh.length && fresh.every(isAgentVersion)
         ctx.data = data
         seenVersion = data.version.n
+        lastContent = contentOf(data)
         if (data.kind === 'text') ctrl.reload(data.markdown, { flash: !!flash })
         else ctrl.reload(data)
         if (ctrl.setMode) ctrl.setMode(mode)
@@ -571,6 +744,19 @@
         drawBanner()
         drawRight()
         drawTools()
+        if (byAgent) {
+          if (turn && !turn.closed && turn.to === prevN && Date.now() - turn.at < TURN_GAP) {
+            var lit = lightChanges(turn.baseContent)
+            turn.to = data.version.n
+            turn.at = Date.now()
+            turn.targets = lit.targets
+            turn.places = lit.places
+            drawAgentBar()
+          } else startTurn(prevN, prevContent, data.version.n)
+        } else if (flash && fresh.length) endTurn()
+        else if (turn) lightChanges(turn.baseContent)
+        if (panel && panel.isOpen()) panel.render()
+        return byAgent
       })
     }
 
@@ -594,8 +780,8 @@
               }
             } else {
               jobs.push(
-                refreshDoc(true).then(function () {
-                  DX.toast('Документ обновлён: версия ' + st.version)
+                refreshDoc(true).then(function (byAgent) {
+                  if (!byAgent) DX.toast('Документ обновлён: версия ' + st.version)
                 }),
               )
             }

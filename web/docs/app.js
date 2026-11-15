@@ -145,11 +145,11 @@
     var asked = 0
     root.textContent = ''
     var lst = h('div.lst')
-    var search = h('input', { type: 'search', placeholder: 'Поиск по документам', 'aria-label': 'Поиск по документам', value: state.query })
+    var search = h('input', { type: 'search', placeholder: 'Найти по тексту', 'aria-label': 'Найти по тексту', value: state.query })
     var newBtn = h('button.btn.pri', { type: 'button', onClick: function () { newMenu(newBtn) } }, DX.icon('plus'), h('span', 'Новый документ'))
     var moreBtn = DX.ib('ellipsis', 'Ещё', function () { listMenu(moreBtn) }, { tp: 'dl' })
     moreBtn.hidden = true
-    var head = h('div.lhd', h('h1', 'Документы'), h('label.srch', DX.icon('search'), search), moreBtn, newBtn)
+    var head = h('div.lhd', h('h1', 'Документы'), h('label.srch', DX.icon('search'), search, h('kbd', /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K')), moreBtn, newBtn)
     function listMenu(anchor) {
       DX.popover(anchor, function (close) {
         return h('div', DX.mi('trash-2', 'Корзина', function () { close(); trashMenu(anchor, fetchRows) }))
@@ -319,7 +319,12 @@
     el.appendChild(thumb)
     el.appendChild(tx)
     el.appendChild(tag)
-    if (r.author) el.appendChild(h('div', { style: 'display:flex' }, DX.avatar(r.author, 'person', 20)))
+    var who = r.people && r.people.length ? r.people : r.author ? [r.author] : []
+    if (who.length) {
+      var avs = h('div.avs')
+      who.forEach(function (n) { avs.appendChild(DX.avatar(n, /^(агент|agent)$/i.test(n) ? 'agent' : 'person', 20)) })
+      el.appendChild(avs)
+    }
     el.appendChild(wh)
     el.appendChild(ac)
     el.addEventListener('click', function (e) {
