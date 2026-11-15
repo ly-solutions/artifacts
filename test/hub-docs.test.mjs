@@ -173,3 +173,21 @@ describe('the trash for a person who signed in directly', () => {
     assert.equal(response.status, 403)
   })
 })
+
+describe('the trash and an address written another way', () => {
+  it('holds for a percent-encoded slug too', async () => {
+    const app = await startApp({ ARTIFACTS_AUTH: 'proxy' })
+    try {
+      const made = await app.request('POST', '/api/v1/artifacts', { body: { title: 'Кодированный', markdown: '# Кодированный' } })
+      const slug = made.data.artifact.slug
+      await app.request('POST', `/api/v1/artifacts/${slug}/trash`, { body: { trashed: true } })
+      const encoded = `%${slug.charCodeAt(0).toString(16)}${slug.slice(1)}`
+      const sso = { 'x-forwarded-user': 'sso-person' }
+      for (const path of [`/api/v1/artifacts/${encoded}`, `/api/v1/artifacts/${encoded}/content`, `/api/v1/artifacts/${encoded}/versions`]) {
+        assert.equal((await app.request('GET', path, { token: null, headers: sso })).status, 404, path)
+      }
+    } finally {
+      await app.close()
+    }
+  })
+})

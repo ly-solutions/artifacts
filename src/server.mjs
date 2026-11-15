@@ -506,7 +506,14 @@ export async function createApp(config, { storage, log = createLogger(config.log
     }
 
     // ---- a document in the hub's trash opens for nobody but a service token ----
-    const trashedSlug = /^\/(?:a|embed|api\/v1\/artifacts)\/([a-z0-9][a-z0-9-]*)(?:\/|$)/.exec(path)?.[1]
+    // The address is read the way the routes read it (percent-decoded), so an encoded slug does not slip past.
+    let decodedPath = path
+    try {
+      decodedPath = decodeURIComponent(path)
+    } catch {
+      /* an address that does not decode matches no document route */
+    }
+    const trashedSlug = /^\/(?:a|embed|api\/v1\/artifacts)\/([a-z0-9][a-z0-9-]*)(?:\/|$)/.exec(decodedPath)?.[1]
     if (trashedSlug && !principal.static && (await trash.has(trashedSlug))) {
       if (path.startsWith('/api/') || !wantsHtml(req)) return json(res, 404, { error: 'not_found' })
       return html(res, 404, errorPage({ siteName: config.siteName, status: 404, title: 'Not found', message: `There is no artifact “${trashedSlug}”.`, principal }))
@@ -614,6 +621,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
       if (match) {
         const slug = decodeURIComponent(match[1])
         if (!isValidSlug(slug)) throw new ApiError(404, 'not_found')
+        if (!principal.static && (await trash.has(slug))) throw new ApiError(404, 'not_found')
         const sub = match[2] ?? ''
         // The hub tells that it put a document into its trash or took it out (a service token only).
         if (sub === '/trash' && method === 'POST') {
