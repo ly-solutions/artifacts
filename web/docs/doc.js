@@ -93,6 +93,11 @@
       shell.tell({ kind: 'document', title: ctx.data.title, url: ctx.data.url || '', object: slug, selection: info.text, rect: { x: r.x, y: r.y, w: r.w, h: r.h } })
     }
 
+    ctx.share = function () {
+      if (!shell.share) return ctx.copyLink()
+      shell.share(slug, ctx.data.shareUrl || null).catch(function () { ctx.copyLink() })
+    }
+
     ctx.copyLink = function (quote) {
       var url = ctx.data.url + (quote ? '#:~:text=' + encodeURIComponent(quote.slice(0, 80)) : '')
       copy(url).then(function () { DX.toast('Ссылка скопирована') }, function () { DX.toast(url) })
@@ -507,7 +512,9 @@
       var avs = h('div.avs')
       names.slice(0, 4).forEach(function (n) { avs.appendChild(DX.avatar(n, people[n], 24)) })
       if (names.length) rightEl.appendChild(h('div', { style: 'padding:0 8px;display:flex' }, avs))
-      rightEl.appendChild(h('button.btn.sm.soft', { type: 'button', 'data-tip': 'Скопировать ссылку', 'data-tp': 'dl', onClick: function () { ctx.copyLink() } }, DX.icon('share'), h('span', 'Поделиться')))
+      // «Поделиться» is the one dialog of harnessly, with people, roles and links without sign-in (HRN-1519); where
+      // neither harnessly nor the hub is there, the link is copied as before.
+      rightEl.appendChild(h('button.btn.sm.soft', { type: 'button', 'data-tip': 'Доступ и ссылка', 'data-tp': 'dl', onClick: function () { ctx.share() } }, DX.icon('share'), h('span', 'Поделиться')))
       var open = threads.filter(function (t) { return t.status === 'open' }).length
       var cb = DX.ib('message-square', 'Комментарии', function () { if (panel.isOpen() && panel.tab() === 'comments') panel.close(); else panel.open('comments') }, { tp: 'dl', on: panel && panel.isOpen() && panel.tab() === 'comments' })
       if (open) cb.appendChild(h('span.cnt', String(open)))

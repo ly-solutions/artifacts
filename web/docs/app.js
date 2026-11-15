@@ -119,6 +119,17 @@
     needSignIn: needSignIn,
     fail: function (title, text) { message(title, text, function () { go(null) }) },
     failed: failed,
+    share: share,
+  }
+
+  /** «Поделиться» of a document (HRN-1519): in harnessly the page opens its share dialog — people, roles, links
+   *  without sign-in; on the site, the hub's page of the document with that dialog open. */
+  function share(slug, url) {
+    function page() {
+      if (!url) throw new Error('no share')
+      window.open(url, '_blank', 'noopener')
+    }
+    return connect().then(function (hl) { return hl.pane.open('share:' + slug) }).catch(page)
   }
 
   function message(title, text, retry) {
@@ -270,6 +281,7 @@
           state.rows = found.items || []
           state.canCreate = !!found.canCreate
           state.hub = !!found.hub
+          state.shareBase = found.shareBase || null
           if (state.hub) moreBtn.hidden = false
           state.next = found.nextOffset
           draw()
@@ -392,6 +404,7 @@
         if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () { DX.toast('Ссылка скопирована') })
       }))
       if (view.canCreate && (view.hub || r.canWrite !== false)) {
+        box.appendChild(DX.mi('share', 'Поделиться…', function () { close(); share(r.slug, view.shareBase ? view.shareBase + encodeURIComponent(r.slug) + '?share=1' : null).catch(function () { DX.toast('Поделиться можно в harnessly') }) }))
         box.appendChild(DX.mi('copy', 'Сделать копию', function () {
           close()
           duplicate(r)
