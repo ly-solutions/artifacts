@@ -24,7 +24,7 @@
     ul: /^(\s*)([-*+])\s+(.*)$/,
     ol: /^(\s*)(\d+)[.)]\s+(.*)$/,
     image: /^\s*!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)\s*$/,
-    html: /^\s{0,3}<\/?[a-zA-Z!][^>]*>/,
+    html: /^\s{0,3}<\/?(?!(?:u|span)\b)[a-zA-Z!][^>]*>/,
     tableSep: /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/,
   }
 
@@ -262,6 +262,21 @@
           continue
         }
       }
+      if (c === '<') {
+        var open = /^<(u|span)((?:\s+style="[^"<>]*")?)>/i.exec(s.slice(i, i + 300))
+        var tagName = open && open[1].toLowerCase()
+        var css = tagName === 'span' ? DX.safeStyle(open[2]) : null
+        var closeAt = open && (tagName === 'u' ? !open[2] : !!css) ? closeOf(s, i + open[0].length, tagName) : -1
+        if (closeAt > -1) {
+          flush()
+          var mark = document.createElement(tagName)
+          if (css) Object.keys(css).forEach(function (prop) { mark.style.setProperty(prop, css[prop]) })
+          DX.renderInline(s.slice(i + open[0].length, closeAt), mark)
+          parent.appendChild(mark)
+          i = closeAt + tagName.length + 3
+          continue
+        }
+      }
       var two = s.slice(i, i + 2)
       if ((two === '**' || two === '__' || two === '~~') && s.indexOf(two, i + 2) > i + 2) {
         var close = s.indexOf(two, i + 2)
@@ -323,6 +338,58 @@
     flush()
   }
 
+  /** Where the `</tag>` that closes the one opened just before `from` is (nested ones of the same tag counted), or -1. */
+  function closeOf(s, from, tag) {
+    var re = new RegExp('<(/?)' + tag + '\\b[^>]*>', 'gi')
+    var depth = 1
+    var hit
+    re.lastIndex = from
+    while ((hit = re.exec(s))) {
+      depth += hit[1] ? -1 : 1
+      if (!depth) return hit.index
+    }
+    return -1
+  }
+
+  // ---- Colour and underline: inline HTML kept in the Markdown, with a white list of what a style may say ----
+
+  var COLOR = /^(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\(\s*[\d.%\s,/]+\)|[a-z]{3,24})$/i
+  var COLOR_KEYWORD_NO = /^(inherit|initial|unset|revert|currentcolor)$/i
+
+  /** A colour the page may paint with, or null. */
+  DX.safeColor = function (value) {
+    var v = String(value || '').trim()
+    if (!COLOR.test(v) || COLOR_KEYWORD_NO.test(v)) return null
+    if (window.CSS && CSS.supports && !CSS.supports('color', v)) return null
+    return v.replace(/\s+/g, '')
+  }
+
+  /** `style="color:…; background-color:…"` → {color, background-color}; nothing else gets through. null when empty. */
+  DX.safeStyle = function (attr) {
+    var m = /style="([^"]*)"/i.exec(String(attr || ''))
+    if (!m) return null
+    var out = {}
+    var any = false
+    m[1].split(';').forEach(function (decl) {
+      var at = decl.indexOf(':')
+      if (at < 1) return
+      var prop = decl.slice(0, at).trim().toLowerCase()
+      if (prop !== 'color' && prop !== 'background-color') return
+      var value = DX.safeColor(decl.slice(at + 1))
+      if (value) {
+        out[prop] = value
+        any = true
+      }
+    })
+    return any ? out : null
+  }
+
+  function hex(c) {
+    var m = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(c)
+    if (!m) return c
+    return '#' + [m[1], m[2], m[3]].map(function (n) { return ('0' + Math.min(255, +n).toString(16)).slice(-2) }).join('')
+  }
+
   var ESCAPE = /([\\`*_[\]~])/g
 
   /** The Markdown of what a contenteditable holds (the reverse of renderInline). */
@@ -331,7 +398,7 @@
       var out = ''
       node.childNodes.forEach(function (n) {
         if (n.nodeType === 3) {
-          out += plain ? n.nodeValue : n.nodeValue.replace(/ /g, ' ').replace(ESCAPE, '\\$1')
+          out += plain ? n.nodeValue : n.nodeValue.replace(/ /g, ' ').replace(ESCAPE, '\\$1').replace(/<(?=[a-zA-Z/!])/g, '\\<')
           return
         }
         if (n.nodeType !== 1) return
@@ -340,6 +407,19 @@
         else if (tag === 'STRONG' || tag === 'B') out += '**' + walk(n) + '**'
         else if (tag === 'EM' || tag === 'I') out += '*' + walk(n) + '*'
         else if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') out += '~~' + walk(n) + '~~'
+        else if (tag === 'U') out += '<u>' + walk(n) + '</u>'
+        else if (tag === 'SPAN' || tag === 'FONT') {
+          var inner2 = walk(n, plain)
+          var color = DX.safeColor(tag === 'FONT' ? n.getAttribute('color') : n.style.color)
+          var back = DX.safeColor(n.style.backgroundColor)
+          var under = n.style.textDecorationLine === 'underline' || /underline/.test(n.style.textDecoration || '')
+          if (!plain && inner2) {
+            if (under) inner2 = '<u>' + inner2 + '</u>'
+            var decl = (color ? 'color:' + hex(color) + ';' : '') + (back ? 'background-color:' + hex(back) + ';' : '')
+            if (decl) inner2 = '<span style="' + decl.slice(0, -1) + '">' + inner2 + '</span>'
+          }
+          out += inner2
+        }
         else if (tag === 'CODE') out += '`' + walk(n, true) + '`'
         else if (tag === 'A') {
           var inner = walk(n)

@@ -67,18 +67,35 @@
       parse(ctx.data.html || '')
     }
 
+    // The page's own policy refuses `style="…"` the moment a parser meets one, even in a document nobody sees (a
+    // console error each time). The source is parsed with the attribute under another name and given its name back
+    // when it is written: a document's text round-trips, and nothing is reported.
+    var GUARD_ATTR = /(<[a-zA-Z][^<>]*?\s)style(\s*=)/g
+    var guard = function (html) { return String(html).replace(GUARD_ATTR, function (all, head, eq) { return head + 'data-dx-style' + eq }) }
+    var unguard = function (html) { return String(html).replace(/(\s)data-dx-style(\s*=)/g, '$1style$2') }
+    /** The inline style of a node of the source as a style object (built off page, by the CSS object model). */
+    function inlineStyle(node) {
+      var probe = document.createElement('div')
+      probe.style.cssText = node.getAttribute('data-dx-style') || ''
+      return probe.style
+    }
+    function writeInlineStyle(node, st) {
+      if (st.cssText) node.setAttribute('data-dx-style', st.cssText)
+      else node.removeAttribute('data-dx-style')
+    }
+
     function parse(html) {
       hadDoctype = /^\s*(?:<!--[\s\S]*?-->\s*)*<!doctype/i.test(html)
       fragment = !!ctx.data.wrapped
-      srcDoc = new DOMParser().parseFromString(html, 'text/html')
+      srcDoc = new DOMParser().parseFromString(guard(html), 'text/html')
       var tag = srcDoc.getElementById('dx-page-css')
       cssText = tag ? tag.textContent : ''
     }
 
     function serialize() {
       if (!parsed) return ctx.data.html || ''
-      if (fragment) return srcDoc.body.innerHTML
-      return (hadDoctype ? '<!doctype html>\n' : '') + srcDoc.documentElement.outerHTML
+      if (fragment) return unguard(srcDoc.body.innerHTML)
+      return (hadDoctype ? '<!doctype html>\n' : '') + unguard(srcDoc.documentElement.outerHTML)
     }
 
     function nodeAt(path) {
@@ -102,14 +119,15 @@
       if (op.k === 'style') {
         var el = nodeAt(op.path)
         if (el) {
-          if (value === '' || value === null) el.style.removeProperty(op.prop)
-          else el.style.setProperty(op.prop, value)
-          if (!el.getAttribute('style')) el.removeAttribute('style')
+          var st = inlineStyle(el)
+          if (value === '' || value === null) st.removeProperty(op.prop)
+          else st.setProperty(op.prop, value)
+          writeInlineStyle(el, st)
         }
         send({ t: 'style', path: op.path, prop: op.prop, value: value, report: !op.quiet })
       } else if (op.k === 'html') {
         var t = nodeAt(op.path)
-        if (t) t.innerHTML = value
+        if (t) t.innerHTML = guard(value)
         send({ t: 'html', path: op.path, html: value })
       } else if (op.k === 'css') {
         cssText = value
@@ -175,7 +193,7 @@
         return
       }
       var node = nodeAt(selected.path)
-      var before = node ? node.style.getPropertyValue(cssProp) : ''
+      var before = node ? inlineStyle(node).getPropertyValue(cssProp) : ''
       if (before === value) return
       record({ k: 'style', path: selected.path, prop: cssProp, before: before, after: value, quiet: !!quiet, merge: 'style:' + selected.path.join('.') + cssProp })
     }

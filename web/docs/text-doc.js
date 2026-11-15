@@ -768,6 +768,9 @@
           if (editing && info.within) {
             bar.appendChild(tip('bold', 'Жирный · ⌘B', function () { document.execCommand('bold'); changedFromCommand() }))
             bar.appendChild(tip('italic', 'Курсив · ⌘I', function () { document.execCommand('italic'); changedFromCommand() }))
+            bar.appendChild(tip('underline', 'Подчёркнутый · ⌘U', function () { document.execCommand('styleWithCSS', false, false); document.execCommand('underline'); changedFromCommand() }))
+            var paint = tip('palette', 'Цвет текста и фона', function () { colorMenu(paint) })
+            bar.appendChild(paint)
             bar.appendChild(tip('code-xml', 'Код', wrapCode))
             bar.appendChild(tip('link', 'Ссылка', function () { askLink(info) }))
             bar.appendChild(h('span.vs'))
@@ -795,6 +798,82 @@
       var blk = blkOf(getSelection().anchorNode)
       if (blk) sync(blk)
       changed()
+    }
+
+    var TEXT_COLORS = [['Красный', '#e5484d'], ['Оранжевый', '#f76b15'], ['Жёлтый', '#ca8a04'], ['Зелёный', '#30a46c'], ['Синий', '#0091ff'], ['Фиолетовый', '#8e4ec6'], ['Серый', '#8b8d98']]
+    var BACK_COLORS = [['Красный', 'rgba(229,72,77,0.28)'], ['Оранжевый', 'rgba(247,107,21,0.28)'], ['Жёлтый', 'rgba(250,204,21,0.38)'], ['Зелёный', 'rgba(48,164,108,0.28)'], ['Синий', 'rgba(0,145,255,0.26)'], ['Фиолетовый', 'rgba(142,78,198,0.28)'], ['Серый', 'rgba(139,141,152,0.28)']]
+
+    function colorMenu(anchor) {
+      var range = getSelection().rangeCount ? getSelection().getRangeAt(0).cloneRange() : null
+      function apply(command, value) {
+        if (range) {
+          var sel = getSelection()
+          sel.removeAllRanges()
+          sel.addRange(range)
+        }
+        paintRange(command === 'foreColor' ? 'color' : 'background-color', value)
+      }
+      DX.popover(anchor, function (close) {
+        var box = h('div.colors')
+        function row(label, list, command) {
+          var line = h('div.crow', h('span.clab', label))
+          list.forEach(function (c) {
+            var sw = h('button.csw', { type: 'button', 'data-tip': c[0], 'aria-label': label + ': ' + c[0], onMousedown: function (ev) { ev.preventDefault() }, onClick: function () { close(); apply(command, c[1]) } })
+            sw.style.setProperty('--c', c[1])
+            if (command === 'foreColor') sw.dataset.k = 'text'
+            line.appendChild(sw)
+          })
+          return line
+        }
+        box.appendChild(row('Текст', TEXT_COLORS, 'foreColor'))
+        box.appendChild(row('Фон', BACK_COLORS, 'hiliteColor'))
+        box.appendChild(h('button.mi', { type: 'button', onMousedown: function (ev) { ev.preventDefault() }, onClick: function () { close(); if (range) { var sel = getSelection(); sel.removeAllRanges(); sel.addRange(range) } clearColor() } }, h('span', 'Сбросить цвет')))
+        return box
+      }, { side: 'above', align: 'center', keep: function () { return true } })
+    }
+
+    /**
+     * Wraps the selected words in a span with the colour. The page's policy refuses a style attribute written by the
+     * editing commands, so the span is made by hand and styled through the CSS object model.
+     */
+    function paintRange(prop, value) {
+      var sel = getSelection()
+      if (!sel.rangeCount || sel.isCollapsed) return
+      var range = sel.getRangeAt(0)
+      var span = document.createElement('span')
+      var content = range.extractContents()
+      content.querySelectorAll('span,font').forEach(function (el) {
+        el.style.removeProperty(prop)
+        if (prop === 'color') el.removeAttribute('color')
+        if (el.getAttribute('style') === '') el.removeAttribute('style')
+        if (!el.attributes.length) el.replaceWith.apply(el, Array.prototype.slice.call(el.childNodes))
+      })
+      span.style.setProperty(prop, value)
+      span.appendChild(content)
+      range.insertNode(span)
+      sel.removeAllRanges()
+      var again = document.createRange()
+      again.selectNodeContents(span)
+      sel.addRange(again)
+      changedFromCommand()
+    }
+
+    /** Takes colour and background off the selected words; a span left with nothing is unwrapped. */
+    function clearColor() {
+      var sel = getSelection()
+      if (!sel.rangeCount) return
+      var range = sel.getRangeAt(0)
+      var root = blkOf(range.commonAncestorContainer)
+      if (!root) return
+      root.querySelectorAll('span,font').forEach(function (el) {
+        if (!range.intersectsNode(el)) return
+        el.style.removeProperty('color')
+        el.style.removeProperty('background-color')
+        el.removeAttribute('color')
+        if (el.getAttribute('style') === '') el.removeAttribute('style')
+        if (!el.attributes.length) el.replaceWith.apply(el, Array.prototype.slice.call(el.childNodes))
+      })
+      changedFromCommand()
     }
 
     function wrapCode() {

@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Text documents: underline and colour of words and of their background from the selection bar. They are kept in the
+  Markdown as inline HTML (`<u>`, `<span style="color:…;background-color:…">`); the view lets only those two
+  properties through, and only real colours (no `url()`, no `var()`).
+
+### Fixed
+
+- Editing an HTML page no longer reports a Content-Security-Policy error for every `style="…"` of the source.
+
+### Added
+
 - The app view is redesigned after the Sinopia prototype «Документы 2.0» (`web/docs/`): a list with search, tabs and
   groups; a text document you edit in place (blocks, «/» menu, selection bar, Markdown stays the source); an HTML page
   you edit visually (select an element, Style island, «у всех таких же», page CSS, text in place, undo/redo, device
