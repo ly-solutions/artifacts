@@ -202,7 +202,9 @@
       seg.appendChild(h('button', { type: 'button', role: 'tab', 'data-tab': t[0], onClick: function () { state.tab = t[0]; draw() } }, t[1]))
     })
     var sub = h('div.lsub', seg)
-    var scroll = h('div.lscroll')
+    // The rows sit in a centred column (.lin) inside the full-width scroller, so the scrollbar stays at the window edge.
+    var lin = h('div.lin')
+    var scroll = h('div.lscroll', lin)
     lst.appendChild(head)
     lst.appendChild(sub)
     lst.appendChild(scroll)
@@ -235,14 +237,14 @@
     function draw() {
       Array.prototype.forEach.call(seg.children, function (b) { b.dataset.on = String(b.dataset.tab === state.tab) })
       newBtn.hidden = false
-      scroll.textContent = ''
+      lin.textContent = ''
       if (state.rows === null) {
-        for (var i = 0; i < 5; i += 1) scroll.appendChild(h('div.skel'))
+        for (var i = 0; i < 5; i += 1) lin.appendChild(h('div.skel'))
         return
       }
       var rows = shown()
       if (!rows.length) {
-        scroll.appendChild(h('div.empty', h('b', state.query || state.tab !== 'all' ? 'Ничего не нашлось' : 'Документов пока нет'), state.query || state.tab !== 'all' ? 'Попробуйте другие слова или вкладку.' : 'Создайте первый или попросите агента в чате написать его.'))
+        lin.appendChild(h('div.empty', h('b', state.query || state.tab !== 'all' ? 'Ничего не нашлось' : 'Документов пока нет'), state.query || state.tab !== 'all' ? 'Попробуйте другие слова или вкладку.' : 'Создайте первый или попросите агента в чате написать его.'))
         return
       }
       var groups = {}
@@ -256,10 +258,10 @@
         groups[g].push(r)
       })
       order.forEach(function (g) {
-        scroll.appendChild(h('div.lbl', g))
-        groups[g].forEach(function (r) { scroll.appendChild(row(r, redrawRows)) })
+        lin.appendChild(h('div.lbl', g))
+        groups[g].forEach(function (r) { lin.appendChild(row(r, redrawRows)) })
       })
-      if (state.next !== null) scroll.appendChild(h('div', { style: 'text-align:center;padding:16px' }, h('button.btn.soft', { type: 'button', onClick: more }, 'Показать ещё')))
+      if (state.next !== null) lin.appendChild(h('div', { style: 'text-align:center;padding:16px' }, h('button.btn.soft', { type: 'button', onClick: more }, 'Показать ещё')))
     }
     function redrawRows() { draw() }
 

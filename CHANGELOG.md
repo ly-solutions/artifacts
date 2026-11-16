@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The documents list keeps its head, tabs and rows in one centred column up to 1200 px on a wide screen
+  (HRN-1477); the type, author and date no longer drift to the far edge of a 2000 px window. The scrollbar stays at
+  the window edge.
+
 ### Performance
 
 - Long documents stay smooth (HRN-1516). One block handle for the page instead of one per block (the hidden handles
