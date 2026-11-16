@@ -347,7 +347,43 @@
   }
 
   /** One document in the list. */
+  /** A board in the list (HRN-1595): it opens where boards open — harnessly's pane, else a new tab. */
+  function openBoard(r) {
+    if (!r.url) return
+    connect().then(function (hl) { return hl.pane.open(r.url) }).catch(function () { window.open(r.url, '_blank', 'noopener') })
+  }
+
+  function boardRow(r) {
+    var el = h('div.drow', { tabindex: '0', role: 'link', 'data-slug': r.slug, 'data-kind': 'board' })
+    var thumb = h('div.ic-doc', DX.icon('layout-dashboard'))
+    var title = h('b', r.title)
+    var tx = h('div.tx', title, h('p', r.preview || 'Доска'))
+    var tag = h('span.tag', DX.icon('layout-dashboard'), 'Доска')
+    var wh = h('div.wh', h('span', DX.when(r.updatedAt)), r.author || '')
+    var ac = h('div.ac')
+    ac.appendChild(DX.ib('eye', 'Открыть', function (e) { e.stopPropagation(); openBoard(r) }, { tp: 'd' }))
+    ac.appendChild(DX.ib('link', 'Копировать ссылку', function (e) {
+      e.stopPropagation()
+      if (r.url && navigator.clipboard) navigator.clipboard.writeText(r.url).then(function () { DX.toast('Ссылка скопирована') })
+    }, { tp: 'dl' }))
+    el.appendChild(thumb)
+    el.appendChild(tx)
+    el.appendChild(tag)
+    if (r.author) el.appendChild(h('div.avs', DX.avatar(r.author, 'person', 20)))
+    el.appendChild(wh)
+    el.appendChild(ac)
+    el.addEventListener('click', function (e) {
+      if (e.target.closest('.ac')) return
+      openBoard(r)
+    })
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target === el) openBoard(r)
+    })
+    return el
+  }
+
   function row(r, redraw) {
+    if (r.kind === 'board') return boardRow(r)
     var el = h('div.drow', { tabindex: '0', role: 'link', 'data-slug': r.slug })
     var thumb = h('div.ic-doc' + (r.kind === 'html' ? '.html' : ''))
     if (r.kind === 'html') thumb.appendChild(h('i', { style: 'top:9px;height:5px;width:22px;right:auto' }))
