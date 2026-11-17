@@ -26,6 +26,7 @@ async function startHub() {
     if (url.pathname === '/.well-known/jwks.json') return reply(200, { keys: [{ ...jwk, kid, use: 'sig', alg: 'EdDSA' }] })
     if (url.pathname === '/.well-known/openid-configuration') return reply(404, {})
     if (url.pathname === '/api/platform/docs/_rights') {
+      hub.rightsAsked = body
       const person = hub.rights[body.sub] ?? {}
       return reply(200, { rights: Object.fromEntries(body.slugs.map((slug) => [slug, hub.trashed.has(slug) ? 'none' : (person[slug] ?? 'none')])) })
     }
@@ -71,6 +72,7 @@ describe('documents made and trashed through the hub', () => {
         hub.trashed.delete(path.split('/')[1])
         return reply(200, { doc: { slug: path.split('/')[1], kind: 'artifact' } })
       }
+      if (method === 'GET' && path === '') return reply(200, { docs: [{ slug: 'flow', kind: 'board', title: 'Путь покупателя', url: 'https://boards.test/b/flow?k=1', lastActivityAt: new Date().toISOString(), owner: { kind: 'person', email: 'ada@example.com', name: 'Ada' } }, { slug: 'x', kind: 'artifact', title: 'not shown twice' }] })
       if (method === 'GET' && path === '/_trash') return reply(200, { docs: [...hub.trashed].map((slug) => ({ slug, kind: 'artifact', title: slug })).concat([{ slug: 'a-board', kind: 'board', title: 'Board' }]) })
       if (method === 'PATCH') return reply(200, { doc: { slug: path.slice(1), title: body.title } })
       return reply(404, { error: 'not_found' })
@@ -106,7 +108,28 @@ describe('documents made and trashed through the hub', () => {
     assert.ok(list.data.items.some((item) => item.slug === made.data.slug))
   })
 
-  it('tells the hub\'s refusal in its words and asks to sign in again when the token is no good', async () => {
+  it('lists the person\'s boards among the documents and finds them by title (HRN-1595)', async () => {
+    const list = await own('GET', '/app/docs')
+    const board = list.data.items.find((item) => item.slug === 'flow')
+    assert.ok(board, JSON.stringify(list.data.items.map((i) => i.slug)))
+    assert.equal(board.kind, 'board')
+    assert.equal(board.url, 'https://boards.test/b/flow?k=1')
+    assert.equal(board.mine, true)
+    assert.ok(!list.data.items.some((item) => item.slug === 'x'), 'a document comes from the catalog, not from the hub\'s list')
+    const found = await own('GET', '/app/docs?q=' + encodeURIComponent('путь'))
+    assert.ok(found.data.items.some((item) => item.slug === 'flow'))
+    const none = await own('GET', '/app/docs?q=' + encodeURIComponent('нетакого'))
+    assert.ok(!none.data.items.some((item) => item.slug === 'flow'))
+  })
+
+  it('names each document\'s author when it asks the hub for rights (HRN-1595)', async () => {
+    const made = await app.service.publish({ title: 'Без записи в хабе', markdown: '# Без записи в хабе\n', new: true }, { name: 'ada@example.com', role: 'editor', via: 'bearer' })
+    await own('GET', '/app/docs?q=' + encodeURIComponent('без записи'))
+    assert.equal(hub.rightsAsked.authors[made.meta.slug], made.meta.author)
+    assert.ok(made.meta.author)
+  })
+
+    it('tells the hub\'s refusal in its words and asks to sign in again when the token is no good', async () => {
     hub.fail = { status: 400, body: { error: 'space_required', message: 'Вы в нескольких пространствах: укажите spaceId — a1 (Одно), b2 (Другое)' } }
     const refused = await own('POST', '/app/docs', { title: 'X' })
     assert.equal(refused.status, 400)

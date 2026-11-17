@@ -130,6 +130,9 @@ export class HubRights {
     this.fetch = fetchImpl
     this.now = now
     this.cache = new Map()
+    /** The author each document names (slug → name or address), sent with the request: the hub decides about a
+     *  document it has no record of by its author, the way its own list does. Set by the server once the catalog is up. */
+    this.authorOf = () => undefined
   }
 
   /** Map of slug to none | view | comment | edit for the person `sub`. */
@@ -160,13 +163,22 @@ export class HubRights {
     for (const key of this.cache.keys()) if (key.endsWith(`\n${slug}`)) this.cache.delete(key)
   }
 
+  authorsOf(slugs) {
+    const out = {}
+    for (const slug of slugs) {
+      const author = this.authorOf(slug)
+      if (typeof author === 'string' && author.trim()) out[slug] = author.trim()
+    }
+    return out
+  }
+
   async ask(sub, slugs) {
     let response
     try {
       response = await this.fetch(this.url, {
         method: 'POST',
         headers: { authorization: `Bearer ${this.accessToken}`, 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ sub, slugs }),
+        body: JSON.stringify({ sub, slugs, authors: this.authorsOf(slugs) }),
         signal: AbortSignal.timeout(10_000),
       })
     } catch (error) {
@@ -226,6 +238,12 @@ export class HubDocs {
 
   create(principal, body) {
     return this.call('POST', '', principal, body)
+  }
+
+  /** What the hub lists for the person: documents and boards with their summaries (`GET <hub>/api/platform/docs`). */
+  async list(principal) {
+    const data = await this.call('GET', '', principal)
+    return Array.isArray(data.docs) ? data.docs : []
   }
 
   duplicate(principal, slug, body) {

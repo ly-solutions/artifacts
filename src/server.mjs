@@ -83,6 +83,7 @@ export async function createApp(config, { storage, log = createLogger(config.log
   const service = await new ArtifactService({ storage, config, log, fetchImpl, plugins: host }).init()
   await host.register(plugins ?? (await loadPluginModules(config.plugins?.modules ?? [])), { config, service })
   const auth = new Authenticator({ config, signer: service.signer, log, fetchImpl })
+  if (auth.hubRights) auth.hubRights.authorOf = (slug) => service.catalog.entries.get(slug)?.meta?.author
   const publicOrigin = new URL(config.publicUrl).origin
   const ancestors = config.embed.frameAncestors
   const jsonLimit = Math.ceil(config.content.maxBytes * 1.5) + 256 * 1024

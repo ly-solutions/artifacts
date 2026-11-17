@@ -104,11 +104,66 @@ export function createAppApi({ config, service, comments, trash, hubDocs, forget
     }
   }
 
+  /** The person's boards as the hub lists them (HRN-1595), cached a little per person; [] when the hub has none or does
+   *  not answer: the documents never wait on the boards. */
+  const boardsCache = new Map()
+  const BOARDS_TTL_MS = 30_000
+  async function boardsOf(principal) {
+    if (!principal.hub || !hubDocs || !principal.token) return []
+    const key = principal.sub ?? principal.token
+    const hit = boardsCache.get(key)
+    if (hit && Date.now() - hit.at < BOARDS_TTL_MS) return hit.items
+    let items = []
+    try {
+      items = (await hubDocs.list(principal)).filter((d) => d && d.kind === 'board' && typeof d.slug === 'string' && d.slug)
+    } catch {
+      return hit ? hit.items : []
+    }
+    if (boardsCache.size > 5_000) boardsCache.clear()
+    boardsCache.set(key, { items, at: Date.now() })
+    return items
+  }
+
+  const fold = (value) => String(value ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+
+  function boardItem(b, principal) {
+    const owner = b.owner && typeof b.owner === 'object' ? b.owner : null
+    const who = owner ? owner.name || owner.email || '' : ''
+    const mine = Boolean(owner && ((principal.email && owner.email === principal.email) || (who && who === principal.name)))
+    return {
+      slug: b.slug,
+      title: b.title || 'Доска',
+      description: null,
+      tags: [],
+      author: who,
+      updatedAt: b.lastActivityAt || null,
+      createdAt: null,
+      updatedBy: who,
+      people: who ? [who] : [],
+      versions: 0,
+      url: b.url || null,
+      kind: 'board',
+      board: true,
+      preview: 'Доска',
+      mine,
+      canWrite: false,
+    }
+  }
+
   async function docs(res, url, principal) {
     const limit = Math.min(Math.max(Math.floor(Number(url.searchParams.get('limit') ?? MAX_LIST)) || MAX_LIST, 1), MAX_LIST)
     const offset = Math.max(Math.floor(Number(url.searchParams.get('offset') ?? 0)) || 0, 0)
-    const result = await searchFor(principal, { q: url.searchParams.get('q') ?? '', tags: [], limit, offset })
-    return json(res, 200, { total: result.total, nextOffset: result.nextOffset ?? null, canCreate: canCreate(principal), hub: Boolean(principal.hub), shareBase: hubUrl && principal.hub ? `${hubUrl}/docs/` : null, items: result.items.map((item) => listItem(item, principal)) })
+    const q = url.searchParams.get('q') ?? ''
+    const [result, boards] = await Promise.all([searchFor(principal, { q, tags: [], limit, offset }), offset === 0 ? boardsOf(principal) : []])
+    let items = result.items.map((item) => listItem(item, principal))
+    // Boards sit in the same list as the documents (HRN-1595), on its first page: found by every word of the query in
+    // their title, and among the documents by the time they last changed when nothing is searched.
+    const words = fold(q).split(/\s+/).filter(Boolean)
+    const found = boards.filter((b) => words.every((w) => fold(b.title).includes(w))).map((b) => boardItem(b, principal))
+    if (found.length) {
+      items = words.length ? items.concat(found) : items.concat(found).sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
+    }
+    return json(res, 200, { total: result.total + found.length, nextOffset: result.nextOffset ?? null, canCreate: canCreate(principal), hub: Boolean(principal.hub), shareBase: hubUrl && principal.hub ? `${hubUrl}/docs/` : null, items })
   }
 
   async function doc(res, url, principal) {
