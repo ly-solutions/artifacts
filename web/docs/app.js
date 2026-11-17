@@ -117,7 +117,7 @@
     back: function () { go(null) },
     navigate: function (slug, v) { go(slug, v) },
     needSignIn: needSignIn,
-    fail: function (title, text) { message(title, text, function () { go(null) }) },
+    fail: function (title, text) { message(title, text, function () { go(null) }, 'Ко всем документам') },
     failed: failed,
     share: share,
   }
@@ -132,10 +132,10 @@
     return connect().then(function (hl) { return hl.pane.open('share:' + slug) }).catch(page)
   }
 
-  function message(title, text, retry) {
+  function message(title, text, retry, label) {
     root.textContent = ''
     var box = h('div.dx-fail', h('b', title), text ? h('p', text) : null)
-    if (retry) box.appendChild(h('button.btn.soft', { type: 'button', onClick: retry }, 'Повторить'))
+    if (retry) box.appendChild(h('button.btn.soft', { type: 'button', onClick: retry }, label || 'Повторить'))
     root.appendChild(box)
   }
   function failed(error) {
