@@ -17,6 +17,12 @@ The `artifacts` CLI talks to it. It is configured by the environment:
 If `artifacts whoami` fails, report that the catalog is not configured instead of guessing a URL or token.
 Never print the token.
 
+**In a harnessly workspace, publish and update with `harnessly docs publish FILE.md|FILE.html [--title T] [--slug S]`
+instead of `artifacts publish`** (sections 2 and 3). It goes through the hub, so the document gets an owner and
+a space and shows in the person's Documents app; `artifacts publish` writes past the hub and the document is
+not listed there. Use `artifacts publish` only when `harnessly docs publish` reports that there is no hub. Finding,
+reading and diffing below stay with `artifacts`.
+
 ## 1. Find before you write
 
 A new document on a topic that already has one splits the history and leaves readers with two half-truths.
